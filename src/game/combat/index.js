@@ -7,7 +7,7 @@
 //   player.setControlOverride(fn) (C5) takes over Spider-Man's input + motion while a fight is on; combat animation is a
 //     pose layer on top of the animation layer's output (poselayer.js)
 //   ctx.timeScale (main.js) = hit-stop / slow-mo; world.alarm(pos, r) makes civilians flee; emits 'crime:zone' {pos, radius}
-// Debug (console / playtests): __cmb.debug.fight('mmgb', dist)  (m melee, g gunman, b brute) · __cmb.debug.state()
+// Debug (console / playtests): __cmb.debug.fight('mmgb', dist)  (m melee, g gunman, b brute, e electro) · __cmb.debug.state()
 //   __cmb.debug.focus(n) · __cmb.debug.hp(n) · __cmb.debug.webAll() · __cmb.state (live)
 import * as THREE from 'three';
 import { on, emit } from '../systems/events.js';
@@ -17,6 +17,8 @@ import { createSpidey } from './spidey.js';
 import { createProps } from './props.js';
 import { createHud } from './hud.js';
 import { createCombatInput } from './input.js';
+import { createElectroBoss } from './electroboss.js';
+import { createLightning } from './lightning.js';
 import { clamp, smooth, damp, lerp, angWrap, yawTo, hdist, rnd, UP } from './util.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
@@ -33,6 +35,11 @@ export function initCombat(ctx) {
   };
   ctx.combat = c;
   c.fx = createFx(ctx);
+  // (user r13c) production lightning (thick branching ribbon bolts, shock rings, scorch, telegraphs, ground surges) and
+  // Electro's street light: ONE PointLight made here, off until he appears (a light added at his spawn would change the
+  // scene's light count -> every lit material recompiles = a hitch at the boss reveal)
+  c.lightning = createLightning(ctx.scene);
+  c.electroLight = new THREE.PointLight(0x4ad4ff, 0, 18, 2); c.electroLight.name = 'cmb-electro-light'; ctx.scene.add(c.electroLight);
   c.rtime = 0;
   c.input = createCombatInput(() => c.rtime, () => c.time);
   c.props = createProps(c);
@@ -137,7 +144,7 @@ export function initCombat(ctx) {
     const heavy = r.armored ? 0.1 : h.heavy || 0;
     const cp = e.chest(_v2).addScaledVector(dir, -0.28); if (h.kind === 'air' || h.kind === 'slam' || e.state === 'air') cp.y = e.pos.y + 1.0;
     if (!h.silent) {
-      c.fx.hit(cp, _v3.copy(dir).negate(), { heavy, color: r.armored ? [3, 3, 3.4] : undefined });
+      c.fx.hit(cp, _v3.copy(dir).negate(), { heavy, color: r.armored ? [3, 3, 3.4] : e.type === 'electro' ? [1.5, 4.6, 9] : undefined });
       // impact: light hits dip time for 2 frames (0.15x, not a freeze), heavy ones hold ~4 frames; a full stop on every
       // jab read as stutter
       if (h.kind === 'finisher') c.hitStop(0.12, 0.05); else if (heavy > 0.5) c.hitStop(0.065, 0.08); else c.hitStop(0.035, 0.15);
@@ -184,12 +191,14 @@ export function initCombat(ctx) {
     const d = hdist(e.pos, pf), dy = Math.abs(pf.y - e.pos.y);
     const inReach = d <= e.T.reach + 0.75 && dy < 1.1;
     if (!inReach || me.invuln()) { c.sfx('whoosh', 10); return; }
-    const heavy = e.type === 'brute' || e.atk === 'kick' && Math.random() < 0.3;
+    const heavy = e.type === 'brute' || (e.type === 'electro' && e.atk === 'bruteSlam') || (e.atk === 'kick' && Math.random() < 0.3);
     const dmg = e.T.dmg * (heavy && e.type !== 'brute' ? 1.3 : 1);
     me.takeHit(e, dmg, heavy);
-    c.fx.hit(_v.copy(P.position).setY(P.position.y + 0.5), _v2.set(pf.x - e.pos.x, 0, pf.z - e.pos.z).normalize(), { heavy: heavy ? 0.6 : 0.2, color: [5, 2, 1.5] });
+    const col = e.type === 'electro' ? [1.6, 5.5, 10] : [5, 2, 1.5];
+    c.fx.hit(_v.copy(P.position).setY(P.position.y + 0.5), _v2.set(pf.x - e.pos.x, 0, pf.z - e.pos.z).normalize(), { heavy: heavy ? 0.6 : 0.2, color: col });
     c.hitStop(heavy ? 0.08 : 0.045, heavy ? 0.06 : 0.12); c.shake(heavy ? 0.4 : 0.22); if (heavy) P.cam?.impact?.(0.3);
     c.hud.hurt(heavy ? 0.4 : 0.1); c.combo.n = 0; c.sfx('hurt', heavy);
+    if (e.type === 'electro' && e.atk === 'bruteSlam') c.enemyShock(e.pos, 3.4, 8, e);
   };
   c.enemyShoot = e => {
     const mz = e.muzzle(_v);
@@ -207,6 +216,63 @@ export function initCombat(ctx) {
     c.fx.hit(chest, dir.clone().negate(), { heavy: 0.05, color: [5, 2, 1.2] });
     c.hud.hurt(0.08); c.shake(0.1); c.combo.n = 0;
     if (me.isFree() && !me.airborne || me.hp <= 0) me.takeHit(e, 0, me.hp <= 0);
+  };
+  c.enemyBolt = e => {
+    c.clearThreats(e);
+    const from = e.muzzle(_v);
+    const chest = c.playerChest(_v2);
+    const dir = _v3.subVectors(chest, from).normalize();
+    const blocked = ctx.world.raycast(from, dir, from.distanceTo(chest) - 0.4);
+    const miss = me.invuln() || blocked || (me.airborne && Math.random() < 0.45);
+    const end = miss ? chest.clone().add(_v4.set(rnd(-1.4, 1.4), rnd(-0.6, 1.1), rnd(-1.4, 1.4))) : chest.clone();
+    e.look?.bolt(from.clone(), end);
+    c.fx.boltSparks(from, end);
+    c.sfx('shot');
+    c.shake(0.18);
+    if (miss) return;
+    me.hp = Math.max(0, me.hp - e.T.dmg * 1.15);
+    c.fx.hit(chest, dir.clone().negate(), { heavy: 0.35, color: [1.4, 5, 10] });
+    c.hud.hurt(0.16); c.combo.n = 0;
+    if (me.isFree() && !me.airborne || me.hp <= 0) me.takeHit(e, 0, me.hp <= 0);
+  };
+  c.enemyShock = (pos, radius, dmg, src) => {
+    c.fx.shock(pos, radius);
+    if (src?.type === 'electro' || dmg >= 12) { // (user r13c) electric slam: shock ring + scorch + arcs racing out along the street
+      const g = pos.clone(); c.lightning.ring(g, radius * 1.5, { life: 0.5, width: 0.3, intensity: 1.0 }); c.lightning.scorch(g, radius * 0.7);
+      for (let i = 0; i < 6; i++) { const a = Math.random() * 6.283, r = radius * rnd(0.8, 1.4); c.lightning.arc(g.clone().setY(g.y + 0.1), new THREE.Vector3(g.x + Math.cos(a) * r, g.y + 0.05, g.z + Math.sin(a) * r), { width: 0.05, life: 0.18, intensity: 1.4 }); }
+      c.shake(0.3);
+    }
+    const pf = c.playerFeet;
+    if (me.invuln()) return;
+    if (hdist(pos, pf) < radius && Math.abs(pf.y - pos.y) < 2.2) {
+      me.hp = Math.max(0, me.hp - dmg);
+      c.hud.hurt(0.22); c.shake(0.32); c.combo.n = 0;
+      c.fx.hit(_v.copy(P.position).setY(P.position.y + 0.4), _v2.set(P.position.x - pos.x, 0, P.position.z - pos.z).normalize(), { heavy: 0.4, color: [1.2, 4.8, 9] });
+      const srcE = src || c.enemies.find(x => x.alive);
+      if (srcE && (me.isFree() && !me.airborne || me.hp <= 0)) me.takeHit(srcE, 0, me.hp <= 0);
+    }
+  };
+  // (user r13c) direct damage for boss attacks (ground surge / barrage): same rules as a bolt hit
+  c.zapPlayer = (dmg, src, from) => {
+    if (me.invuln()) return false;
+    me.hp = Math.max(0, me.hp - dmg);
+    const chest = c.playerChest(_v2);
+    c.fx.hit(chest, _v3.copy(chest).sub(from || chest).setY(0).normalize(), { heavy: 0.5, color: [1.4, 5, 10] });
+    c.hud.hurt(0.25); c.shake(0.4); c.combo.n = 0;
+    const e = src || c.enemies.find(x => x.alive);
+    if (e && (me.isFree() && !me.airborne || me.hp <= 0)) me.takeHit(e, 0, me.hp <= 0);
+    return true;
+  };
+  c.enemyStorm = e => {
+    const pf = c.playerFeet.clone();
+    const gy = ctx.world.groundHeight(pf.x, pf.z, pf.y + 2);
+    const mark = new THREE.Vector3(pf.x, gy, pf.z);
+    c.fx.shock(mark, 1.1);
+    c.lightning.telegraph(mark, 2.7, 0.55); // (user r13c) the warning circle tightens until the strike
+    c.pendingStorm = c.pendingStorm || [];
+    c.pendingStorm.push({ at: c.time + 0.55, pos: mark, e });
+    c.threat(e, 0.55, 'bolt');
+    e.look?.flash();
   };
 
   // ------------------------------------------------------------------ fight lifecycle
@@ -255,10 +321,10 @@ export function initCombat(ctx) {
   function endFight(won) {
     const f = c.fight; if (!f) return;
     c.fight = null; engage(false); c.combo.n = 0;
-    c.threats.length = 0; c.meleeToken = c.gunToken = null;
+    c.threats.length = 0; c.meleeToken = c.gunToken = null; c.pendingStorm = null;
     if (won && f.crime) emit('crime:cleared', { id: f.crime.id });
     emit('crime:zone', { id: f.crime?.id || 'cmb-fight', pos: f.center.clone(), radius: 15, active: false, type: f.crime?.type || 'fight' });
-    if (won) { c.hud.banner('AREA CLEAR'); c.slowmo(0.8, 0.35, 0.5); }
+    if (won) { c.hud.banner(c.enemies.some(e => e.type === 'electro') ? 'ELECTRO DOWN' : 'AREA CLEAR'); c.slowmo(0.8, 0.35, 0.5); }
     setTimeout(() => { if (!c.fight) c.hud.show(false); }, 3500);
     c.leftovers = { t: 0, center: f.center, spawned: f.spawned };
   }
@@ -291,6 +357,11 @@ export function initCombat(ctx) {
     crime.claim();
     if (c.leftovers) disposeLeftovers();
     const actors = crime.enemies.map(x => x.actor).filter(Boolean);
+    if (crime.type === 'electro') {
+      startFight({ crime, center: crime.pos, actors, types: actors.map(() => 'electro'), extra: [] });
+      c.hud.banner('ELECTRO'); me.hp = Math.max(me.hp, 100);
+      return;
+    }
     const bank = crime.type === 'bankAlarm';
     const types = actors.map((a, i) => bank && i === 1 ? 'gunman' : 'melee');
     if (bank && actors[1]) attachGunLater(actors[1]);
@@ -322,7 +393,7 @@ export function initCombat(ctx) {
         if (Math.abs(d) < minSep) { const push = (minSep - Math.abs(d)) * 0.5 * (d >= 0 ? 1 : -1); items[i].a -= push; items[j].a += push; }
       }
       items.forEach((o, i) => {
-        let r = gun ? 9.5 + (i % 2) * 1.5 : o.e.type === 'brute' ? 3.6 : 3.0 + (i % 2) * 0.7;
+        let r = gun ? 9.5 + (i % 2) * 1.5 : o.e.type === 'electro' ? 7.2 : o.e.type === 'brute' ? 3.6 : 3.0 + (i % 2) * 0.7;
         if (me.airborne && !gun) r += 1.2;
         const d = _v.set(Math.sin(o.a), 0, Math.cos(o.a));
         const h = ctx.world.raycast(_v2.set(pf.x, pf.y + 1, pf.z), d, r + 0.6);
@@ -344,11 +415,11 @@ export function initCombat(ctx) {
     }
     if (!c.gunToken && c.gunCd <= 0) {
       for (const e of standing) {
-        if (!e.hasGun || e.state !== 'hold' || e.cd > 0) continue;
-        const d = hdist(e.pos, pf); if (d > 24 || d < 2.5) continue;
+        if ((!e.hasGun && !e.hasBolt) || e.state !== 'hold' || e.cd > 0) continue;
+        const d = hdist(e.pos, pf); if (d > 24 || d < (e.hasBolt ? 3.2 : 2.5)) continue;
         const from = _v.copy(e.pos).setY(e.pos.y + 1.4), to = c.playerChest(_v2); const dir = _v3.subVectors(to, from); const L = dir.length(); dir.normalize();
         if (ctx.world.raycast(from, dir, L - 0.5)) continue;
-        c.gunToken = e; e.set('aim'); e.aimDur = 0.95; c.threat(e, 0.95, 'gun'); break;
+        c.gunToken = e; e.set('aim'); e.aimDur = e.hasBolt ? 0.72 : 0.95; c.threat(e, e.aimDur, e.hasBolt ? 'bolt' : 'gun'); break;
       }
     }
   }
@@ -563,6 +634,7 @@ export function initCombat(ctx) {
       const realDt = ctx.realDt ?? dt;
       const playing = ctx.flow ? ctx.flow.isPlaying : true;
       if (!playing) { if (c.engaged) ctx.timeScale = 1; return; }
+      c.lightning.update(dt, ctx.camera);
       c.time += dt; c.rtime += realDt;
       c.input.poll();
       c.playerFeet.copy(P.position).setY(P.position.y - H);
@@ -609,6 +681,22 @@ export function initCombat(ctx) {
       me.late(dt);
       if (c.pendingShot && c.time >= c.pendingShot.at) { const t = c.pendingShot.target; c.pendingShot = null; if (t?.alive) fireWeb(t); }
       updateShots(dt);
+      if (c.pendingStorm) {
+        for (let i = c.pendingStorm.length - 1; i >= 0; i--) {
+          const st = c.pendingStorm[i];
+          if (c.time < st.at) continue;
+          // (user r13c) the storm comes DOWN: a thick branching bolt out of the sky onto the mark (+ a thinner one from his hands)
+          const to = st.pos.clone().setY(st.pos.y + 0.12);
+          const sky = st.pos.clone().add(new THREE.Vector3(rnd(-6, 6), 42, rnd(-6, 6)));
+          c.lightning.strike(sky, to, { width: 0.32, life: 0.45, branches: 6, jag: 0.12, intensity: 1.7 });
+          if (st.e?.alive) st.e.look?.bolt(st.e.chest(_v).clone(), to.clone().setY(to.y + 3));
+          c.lightning.ring(to, 5, { life: 0.55, width: 0.3, intensity: 1.1 }); c.lightning.scorch(to, 1.8);
+          c.fx.boltSparks(sky, to); c.shake(0.42); st.e?.look?.flash();
+          c.sfx('shot');
+          c.enemyShock(st.pos, 2.7, 16, st.e);
+          c.pendingStorm.splice(i, 1);
+        }
+      }
       c.props.update(dt);
       for (let i = c.loose.length - 1; i >= 0; i--) {
         const l = c.loose[i]; l.t += dt; if (l.rest) continue;
@@ -621,7 +709,7 @@ export function initCombat(ctx) {
       let lvl = 0, red = 0;
       for (const t of c.threats) {
         const r = t.at - c.time; const k = clamp(1 - r / 0.75, 0, 1) * (r > -0.1 ? 1 : 0);
-        if (k > lvl) { lvl = k; red = t.kind === 'gun' ? 1 : 0; }
+        if (k > lvl) { lvl = k; red = t.kind === 'gun' ? 1 : t.kind === 'bolt' ? 0.4 : 0; }
         if (!t.hinted && r < 0.5 && r > 0.2) {
           t.hinted = true;
           if (c.warnCount < 2 && P.mode === 'ground') { c.slowmo(0.28, 0.45, 0.2); } // teach the warning once or twice
@@ -641,6 +729,26 @@ export function initCombat(ctx) {
   ctx.systems = ctx.systems || [];
   ctx.systems.push(system);
 
+  // ------------------------------------------------------------------ (user r13b) boss encounters (electroboss.js)
+  // c.bossFight({center, type, dist}) spawns the boss `dist` m from the player toward `center` and starts the fight;
+  // c.reinforce(types) runs adds in mid-fight. Resolves to the boss Enemy.
+  c.bossFight = async ({ center, type = 'electro', dist = 9 } = {}) => {
+    const A = actorsApi(); if (!A) return null;
+    await A.ready();
+    if (c.fight) endFight(false);
+    if (c.leftovers) disposeLeftovers();
+    const pf = P.position.clone().setY(P.position.y - H);
+    const to = center.clone().setY(pf.y).sub(pf); if (to.lengthSq() < 1) to.copy(P.cam.forwardFlat(new THREE.Vector3())); to.setY(0).normalize();
+    const p = pf.clone().addScaledVector(to, dist); p.y = ctx.world.groundHeight(p.x, p.z, pf.y + 2);
+    const ac = A.spawn({ pos: p, yaw: yawTo(p, pf), variant: 'c', role: 'thug' }); if (!ac) return null;
+    ac.combatSpawned = true;
+    startFight({ center: p.clone(), actors: [ac], types: [type] });
+    c.fight.spawned.push(ac); c.fight.boss = true;
+    return c.enemies.find(e => e.type === type) || null;
+  };
+  c.reinforce = types => { if (c.fight) reinforce(c.fight.center, types, P.position); };
+  createElectroBoss(c, ctx);
+
   // ------------------------------------------------------------------ debug / playtest hooks
   c.debug = {
     async fight(spec = 'mmgb', dist = 7) {
@@ -651,7 +759,7 @@ export function initCombat(ctx) {
       const pf = P.position.clone().setY(P.position.y - H);
       const fwd = P.cam.forwardFlat(new THREE.Vector3());
       const center = pf.clone().addScaledVector(fwd, dist * 0.6);
-      const map = { m: 'melee', g: 'gunman', b: 'brute' };
+      const map = { m: 'melee', g: 'gunman', b: 'brute', e: 'electro' };
       const actors = [], types = [];
       [...spec].forEach((ch, i) => {
         const type = map[ch] || 'melee';
@@ -659,7 +767,7 @@ export function initCombat(ctx) {
         const r = type === 'gunman' ? dist + 4 : dist;
         const d = fwd.clone().applyAxisAngle(UP, a);
         const p = pf.clone().addScaledVector(d, r); p.y = ctx.world.groundHeight(p.x, p.z, pf.y + 2);
-        const ac = A.spawn({ pos: p, yaw: yawTo(p, pf), variant: type === 'gunman' ? 'a' : type === 'brute' ? 'c' : ['b', 'a'][i % 2], role: 'thug' });
+        const ac = A.spawn({ pos: p, yaw: yawTo(p, pf), variant: type === 'gunman' ? 'a' : type === 'brute' || type === 'electro' ? 'c' : ['b', 'a'][i % 2], role: 'thug' });
         if (ac) { actors.push(ac); types.push(type); ac.combatSpawned = true; }
       });
       startFight({ center, actors, types });

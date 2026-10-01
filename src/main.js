@@ -27,6 +27,20 @@ const boot = window.__boot || { stage: async () => {}, sub() {}, done() {} };
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false, reversedDepthBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+// (user r13d) which GPU did the browser give us? On dual-GPU laptops Chrome often ignores powerPreference and runs WebGL
+// on the integrated GPU (Windows: Settings > System > Display > Graphics > chrome.exe > High performance fixes it)
+{ try {
+    const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    console.info('[gpu]', gpu); window.__gpu = gpu;
+    if (/intel|iris|uhd/i.test(gpu) && !/nvidia|geforce|radeon|amd/i.test(gpu) && !new URLSearchParams(location.search).has('shot')) {
+      const n = document.createElement('div');
+      n.textContent = 'Running on the integrated GPU (' + gpu.replace(/^ANGLE \(|\)$/g, '').split(',')[1]?.trim() + ') — for full speed set your browser to "High performance" in Windows Graphics settings';
+      Object.assign(n.style, { position: 'fixed', left: '50%', bottom: '18px', transform: 'translateX(-50%)', zIndex: 50, padding: '8px 14px', borderRadius: '8px',
+        background: 'rgba(10,14,22,.85)', color: '#ffd27a', font: '600 13px system-ui, sans-serif', pointerEvents: 'none', maxWidth: '90vw', textAlign: 'center' });
+      document.body.appendChild(n); setTimeout(() => n.remove(), 14000);
+    }
+  } catch (e) { /* no debug info */ } }
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;

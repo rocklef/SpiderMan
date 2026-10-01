@@ -8,7 +8,8 @@ export const DEFAULT_SETTINGS = {
   quality: 'high', renderScale: 1, mouseSensitivity: 1, invertY: false,
   masterVolume: 0.8, musicVolume: 0.6, sfxVolume: 0.9, ambienceVolume: 0.75, uiVolume: 0.7, // (audio r1) musicVolume
   showPins: true, minimalHud: false, subtitles: true, fovOffset: 0, motionBlur: 1, dof: 1, hudScale: 1, subtitleSize: 1,
-  timeOfDay: 'day', // (lighting2 r3) fixed preset: day | morning | sunrise | sunset | dusk | night | overcast
+  look: 'asm2', // (user r13) film grade: asm2 | standard
+  timeOfDay: 'asm2', // (user r13) default: ASM2 golden hour. (lighting2 r3) fixed preset: day | morning | sunrise | sunset | dusk | night | overcast
   puddles: true, // (user r-nopuddles) water / wet patches on the ground in dry weather (rain always wets the streets)
   daySun: 'a', // (user r-daysun) Day preset sun direction: a (midday, SSW) | b (late morning, SE) | c (afternoon, WSW)
 };
@@ -35,6 +36,8 @@ export function createSave() {
       if (raw) {
         const s = JSON.parse(raw);
         if (s && s.v === 1) state = { ...defaultState(), ...s, settings: { ...DEFAULT_SETTINGS, ...(s.settings || {}) }, crimes: { ...defaultState().crimes, ...(s.crimes || {}) } };
+        // (user r13) one-time move of pre-ASM2 saves onto the ASM2 film look + golden hour (still changeable in Settings)
+        if (s && s.v === 1 && s.settings && !('look' in s.settings)) { state.settings.look = 'asm2'; state.settings.timeOfDay = 'asm2'; }
       }
     } catch (e) { console.warn('[save] could not read save, starting fresh', e); }
   }

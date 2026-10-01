@@ -81,7 +81,7 @@ function lookAt(el) {
 export const PRESETS = {
   // (lighting2 r3, user) daylight presets: strong key : fill (less sky + bounce fill than r1/r2: shade clearly darker, cool,
   // with texture), crisp shadows. Day: high sun (~65 deg) slightly south-west, most streets / roofs in direct sun.
-  day:      { elevation: 65, azimuth: 118, look: { vertFill: 0.55, vertBounce: 0.25, warm: 0.22, env: 1.0, envSpec: 0.9, envSat: 0.9, sun: 1.75, exposure: 0.9, clouds: 0.55, fog: 0.9, mie: 0.35, bounce: 0.4, groundBounce: 1.25, /* measured vs topdown_street_shadows: first pass lit 0.23 / shade 0.004 (ref 0.55 / 0.023) */ glow: 0.15, fogTint: [0.74, 0.84, 1.0] } },
+  day:      { elevation: 65, azimuth: 118, look: { vertFill: 0.62, vertBounce: 0.28, warm: 0.10, env: 1.08, envSpec: 1.0, envSat: 0.72, sun: 1.62, exposure: 0.86, clouds: 0.42, fog: 0.72, mie: 0.28, bounce: 0.36, groundBounce: 1.1, glow: 0.08, fogTint: [0.70, 0.82, 1.0] } },
   morning:  { elevation: 16, azimuth: 342, look: { vertFill: 0.6, vertBounce: 0.3, warm: 0.22, env: 0.58, envSat: 0.8, sun: 1.65, exposure: 1.0, clouds: 0.5, fog: 1.2, mie: 0.9, bounce: 0.24, groundBounce: 0.8, glow: 0.45, fogTint: [0.78, 0.86, 1.0] } },
   sunrise:  { elevation: 4, azimuth: 330, look: { vertFill: 0.65, vertBounce: 0.35, warm: 0.8, env: 0.5, bounce: 0.26, groundBounce: 0.9, glow: 1.4, clouds: 0.5, skyDusk: 1.0 } },
   sunset:   { elevation: 7, azimuth: 160, look: { vertFill: 0.65, vertBounce: 0.35, warm: 0.85, env: 0.52, bounce: 0.3, groundBounce: 1.0, glow: 1.5, clouds: 0.55, skyDusk: 1.25 } },
@@ -93,6 +93,9 @@ export const PRESETS = {
 // (user r-daysun) "add 2 different sun orientations for light / shadows during the day preset": same Day look, the sun
 // from two more directions (Settings > Day Sun). dayB: late-morning sun from the south-east (shadows fall north-west
 // across the streets); dayC: mid-afternoon sun from the west-south-west, lower (longer shadows across the avenues).
+// (user r13) ASM2 golden hour: the film's sunlit swing scenes — low warm sun raking down the avenues, glowing haze,
+// long shadows, still bright enough to play in (a gameplay-friendly sunset)
+PRESETS.asm2 = { elevation: 13, azimuth: 150, look: { vertFill: 0.66, vertBounce: 0.36, warm: 0.72, env: 0.66, envSat: 0.85, sun: 1.5, exposure: 1.05, clouds: 0.48, fog: 1.15, mie: 0.95, bounce: 0.34, groundBounce: 1.2, glow: 1.25, fogTint: [1.0, 0.88, 0.76] } };
 PRESETS.dayB = { elevation: 55, azimuth: 58, look: { ...PRESETS.day.look } };
 PRESETS.dayC = { elevation: 44, azimuth: 160, look: { ...PRESETS.day.look } };
 export const DAY_SUNS = { a: 'day', b: 'dayB', c: 'dayC' };
@@ -199,7 +202,7 @@ export function createLighting({ renderer, scene }) {
     applySun({ env: !cycling });
     // ambient grade (diffuse IBL): saturation + slight warm tint; bounce GI from the sunlit street/facades
     const sc = sky.sunColor, sy = Math.max(sky.sunDir.y, 0);
-    ambShared.grade.set(0.98, 1.0, 1.03, L.envSat); // (atmosphere r2) slightly cool sky fill: shade reads cool against the warm key (was 1.04/1/0.93); the warm street bounce below keeps it from going blue
+    ambShared.grade.set(0.96, 1.0, 1.06, L.envSat);
     const bk = (L.bounce ?? 0.4) * Math.max(sy, 0.3 * Math.min(1, sy * 8)); // (lighting2 r1) 0.17 -> 0.4; low suns keep a floor (golden hour bounce) // sunlit street/facade bounce onto shaded walls (atmosphere r2: 0.12 -> 0.17, shade keeps a readable warm-lifted floor)
     ambShared.bounce.set(sc.r * bk * 1.08, sc.g * bk, sc.b * bk * 0.8, lerp(1, 0.04, night));
     // (atmosphere r3) street-level bounce boost (surface.js): people / cars / shop fronts standing in building shade in

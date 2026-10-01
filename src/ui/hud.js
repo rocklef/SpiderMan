@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { loadFonts } from './fonts.js';
 import { createReticle } from './reticle.js';
 
-const COL = { street: '#0a1648', block: '#95b4f5', blockHi: '#b4cbff', water: '#1b4f86', shore: '#5da6e6', park: '#2f63b0', sidewalk: '#16266a', bg: '#0c1c55' };
+const COL = { street: '#12141a', block: '#3a3f4a', blockHi: '#5a6170', water: '#1a3048', shore: '#2d4a66', park: '#24382c', sidewalk: '#1a1d24', bg: '#0e1014' };
 let PX_PER_M = 0.58;        // offscreen map resolution (lowered if the minimap canvas fails to allocate; see buildOffscreen)
 const VIEW_M = 260;        // meters visible across the minimap width
 
@@ -14,25 +14,24 @@ function css() {
   loadFonts();
   const s = document.createElement('style'); s.id = 'hud-css';
   s.textContent = `
-  #hud{position:fixed;inset:0;pointer-events:none;font-family:Rajdhani,'Barlow Condensed','Arial Narrow',sans-serif;color:#fff;z-index:10;transition:opacity .4s}
+  #hud{position:fixed;inset:0;pointer-events:none;font-family:var(--sys-body,Manrope,system-ui,sans-serif);color:#fff;z-index:10;transition:opacity .4s}
   #hud.hidden{opacity:0}
-  .mm-wrap{position:absolute;right:2.4vw;bottom:1.9vh;width:15.6vw;min-width:190px;perspective:700px}
-  .mm{position:relative;transform:rotateY(-12deg) rotateX(6deg) skewY(-1.5deg);transform-origin:100% 100%}
-  .mm-compass{position:relative;height:2.1vw;min-height:26px;overflow:hidden;
-    background:linear-gradient(180deg,rgba(18,30,60,.55),rgba(18,30,60,.25));border-top:1px solid rgba(190,210,255,.55);
-    clip-path:polygon(0 0,100% 0,100% 100%,0 100%)}
+  .mm-wrap{position:absolute;right:2.2vw;bottom:2.2vh;width:14.2vw;min-width:176px;perspective:none}
+  .mm{position:relative;transform:none;transform-origin:100% 100%}
+  .mm-compass{position:relative;height:1.7vw;min-height:22px;overflow:hidden;border-radius:10px 10px 0 0;
+    background:rgba(10,11,14,.55);border:1px solid rgba(255,255,255,.10);border-bottom:none;backdrop-filter:blur(14px)}
   .mm-compass canvas{position:absolute;inset:0;width:100%;height:100%}
-  .mm-map{position:relative;margin-top:.25vw;aspect-ratio:1.78/1;border-radius:.35vw;overflow:hidden;
-    box-shadow:0 0 0 1px rgba(160,190,255,.35),0 4px 18px rgba(0,0,30,.35);background:${COL.bg}}
+  .mm-map{position:relative;margin-top:0;aspect-ratio:1.78/1;border-radius:0 0 12px 12px;overflow:hidden;
+    box-shadow:0 8px 28px rgba(0,0,0,.35);background:${COL.bg};border:1px solid rgba(255,255,255,.10);border-top:none}
   .mm-map canvas{position:absolute;inset:0;width:100%;height:100%}
-  .mm-corner{position:absolute;width:10px;height:10px;border:1.5px solid rgba(220,230,255,.8)}
-  .mm-side{position:absolute;right:-6px;top:38%;width:3px;height:22%;background:#f39a2b;border-radius:2px;box-shadow:0 0 6px #f39a2b}
+  .mm-corner{display:none}
+  .mm-side{display:none}
   .obj-ind{position:absolute;width:64px;height:64px;transform:translate(-50%,-50%);transition:opacity .3s}
   .obj-ind svg{width:100%;height:100%;overflow:visible}
-  .help{position:absolute;left:2vw;bottom:3vh;font-size:15px;line-height:1.5;letter-spacing:.04em;
-    background:linear-gradient(90deg,rgba(8,14,34,.62),rgba(8,14,34,0));padding:10px 26px 10px 14px;border-left:2px solid #e23b3b;transition:opacity 1.2s}
-  .help b{display:inline-block;min-width:96px;color:#ffd35a;font-weight:700}
-  .help .t{font-weight:700;font-size:13px;color:#9fb6ea;letter-spacing:.18em;margin-bottom:4px}
+  .help{position:absolute;left:2vw;bottom:3vh;font-size:14px;line-height:1.55;letter-spacing:.01em;
+    background:rgba(10,11,14,.55);backdrop-filter:blur(16px);padding:12px 20px 12px 16px;border:1px solid rgba(255,255,255,.1);border-radius:14px;border-left:2px solid #ff2b3a;transition:opacity 1.2s}
+  .help b{display:inline-block;min-width:96px;color:#fff;font-weight:650}
+  .help .t{font-weight:650;font-size:11px;color:rgba(255,255,255,.55);letter-spacing:.16em;margin-bottom:6px}
   .dbg{position:absolute;left:10px;top:8px;font:12px monospace;color:#cfe;opacity:.55;text-shadow:0 1px 2px #000}
   `;
   document.head.appendChild(s);
@@ -76,11 +75,11 @@ export function createHud({ player, world, camera }) {
     <div class="obj-ind"><svg viewBox="-32 -32 64 64">
       <g class="chev" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"><path d="M-17,-9 L-27,0 M-27,4 L-15,11"/></g>
       <g transform="translate(6,0)">
-        <path d="M0,-17 L13,-4 M0,17 L13,4 M0,-17 L-13,-4 M0,17 L-13,4" stroke="#f5b82e" stroke-width="3.4" fill="none"/>
-        <path d="M0,-11 L11,0 L0,11 L-11,0Z" fill="rgba(20,20,26,.75)"/>
-        <path d="M0,-6.5 L6.5,0 L0,6.5 L-6.5,0Z" fill="none" stroke="#f5b82e" stroke-width="2"/>
-        <circle r="2.4" fill="#f5d34a"/>
-        <path d="M-19,0 h4 M15,0 h4" stroke="#f5b82e" stroke-width="2"/>
+        <path d="M0,-17 L13,-4 M0,17 L13,4 M0,-17 L-13,-4 M0,17 L-13,4" stroke="#ff2b3a" stroke-width="2.4" fill="none"/>
+        <path d="M0,-11 L11,0 L0,11 L-11,0Z" fill="rgba(10,11,14,.72)"/>
+        <path d="M0,-6.5 L6.5,0 L0,6.5 L-6.5,0Z" fill="none" stroke="#fff" stroke-width="1.6"/>
+        <circle r="2.2" fill="#fff"/>
+        <path d="M-19,0 h4 M15,0 h4" stroke="rgba(255,255,255,.7)" stroke-width="1.6"/>
       </g></svg></div>
     <div class="help"><div class="t">CONTROLS</div>
       <div><b>WASD</b>Move (camera relative)</div><div><b>Mouse</b>Camera (click to capture)</div>

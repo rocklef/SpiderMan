@@ -66,7 +66,7 @@ const TRAITS = {
 };
 // user r10: release tricks are procedural (PTRICK, trickPose/trickSpin); the tucked releaseTuck "crouch" is never used after a
 // release. Legacy names (flip/backflip/twist/spin/airTrick) still map to the authored clips.
-const PTRICK = { layout: 1.3, corkscrew: 0.78, tuckFlip: 0.9, scissor: 0.7 }; // durations = traversal TRICK_DEF
+const PTRICK = { layout: 1.3, corkscrew: 0.78, tuckFlip: 0.9, scissor: 0.7, starfish: 1.15, superman: 1.0, twister: 0.95 }; // durations = traversal TRICK_DEF
 // user r10b: no 'fan' spins — the cartwheel and the authored releaseCorkscrew (twist/spin) mappings are removed
 const TRICKS = { layout: 'proc', corkscrew: 'proc', tuckFlip: 'proc', scissor: 'proc', flip: 'releaseFlip', frontflip: 'releaseFlip', backflip: 'releaseFlip', airTrick: 'airTrick' };
 const WALL_Z = 0.30; // wall plane in wall-authored clips (character space +Z; SPIDERMAN.md conventions)
@@ -96,7 +96,7 @@ export class Animator {
     this.clips = new ClipLib(this.skel, rig.allClips || []);
     const N = this.skel.N;
     this.pool = []; this.P = {};
-    for (const k of ['a', 'b', 'c', 'd', 'e', 'idle', 'loco', 'tmp', 'mir', 'out', 'prev', 'fi']) this.P[k] = new Pose(N);
+    for (const k of ['a', 'b', 'c', 'd', 'e', 'idle', 'loco', 'tmp', 'mir', 'out', 'prev', 'fi', 'asm']) this.P[k] = new Pose(N);
     this.P.out.copy(this.skel.rest); this.P.prev.copy(this.skel.rest);
     this.layers = [];
     // continuous state
@@ -166,6 +166,20 @@ export class Animator {
         return 'crawl';
       default: return 'ground';
     }
+  }
+  // user r13: ASM2 signature variants (hand-keyed clips, tools/asm2/author_clips.py). After `delay` s in a still pose the
+  // variant cross-fades in (~1.2 s) for `hold` s, then back out; repeats every `period` s. Returns the blend weight (0..1)
+  // and leaves the variant pose in this.P.asm.
+  asm2Variant(D, clip, t, base, { delay = 4, hold = 12, period = 22, on = true } = {}) {
+    if (!this.clips.has(clip)) return 0;
+    const cyc = (t - delay) % period, want = on && t > delay && cyc < hold ? 1 : 0;
+    D.asmW = damp(D.asmW ?? 0, want, 1.6, this.dt);
+    if (want && (D.asmW ?? 0) < 0.02) D.asmT0 = t; // the clip starts from its first frame each time it comes in
+    const w = smooth(D.asmW);
+    if (w < 0.001) return 0;
+    this.clips.sample(clip, Math.max(0, t - (D.asmT0 ?? t)), this.P.asm);
+    blendPoses(base, this.P.asm, w, base);
+    return w;
   }
   trickKey(trick) {
     if (trick !== this.lastTrick) { this.lastTrick = trick; this.trickSeq++; }
@@ -636,9 +650,9 @@ export class Animator {
     const upright = (kind === 'upright' || kind === 'air') ? 1 : 0;
     const hs = this.speedH;
     const latA = hs * (this.yawRate || 0); // centripetal
-    this.lean.step(upright * smooth((hs - 2.5) / 3) * clamp(-Math.atan(latA / 9.81) * 0.6, -0.2, 0.2), dt);
+    this.lean.step(upright * smooth((hs - 2.5) / 3) * clamp(-Math.atan(latA / 9.81) * 0.85, -0.32, 0.32), dt); // user r13: was 0.6 / 0.2
     const fa = (this.accel.x * Math.sin(this.yaw) + this.accel.z * Math.cos(this.yaw));
-    this.pitchLean.step(upright * (kind === 'upright' ? clamp(fa / 9.81 * 0.25, -0.08, 0.12) : 0), dt);
+    this.pitchLean.step(upright * (kind === 'upright' ? clamp(fa / 9.81 * 0.35, -0.1, 0.16) : 0), dt); // user r13: was 0.25
     const R = this.visQ || (this.visQ = new THREE.Quaternion());
     R.copy(this.frameQ);
     R.multiply(_q2.setFromAxisAngle(Z, this.lean.x)).multiply(_q2.setFromAxisAngle(X, this.pitchLean.x));
@@ -722,6 +736,13 @@ export class Animator {
     if (this.swLegW > 0.005) (() => { // upswing tuck holds on after the let-go (refs 05-08: still balled up while rising), fading slowly
       const tt = A.mode === 'swing' ? this.two.max * smooth(((this.twoPh ?? 0) + 0.2) / 0.4) : 0;
       this.tuckW = damp(this.tuckW || 0, tt, tt > (this.tuckW || 0) ? 8 : (A.mode === 'swing' && (this.twoPh ?? 0) > 0.2 ? 1.2 : 4), dt);
+      { // user r13: leg whip — the legs lag the arc (trail back while the body accelerates down / through the bottom) and
+        // overshoot forward on the upswing; an under-damped spring on the swing-phase rate, a few cm .. ~0.3 m
+        const ph = A.mode === 'swing' ? (A.swing?.phase ?? 0) : (this._phPrev ?? 0);
+        const pv = this._phPrev === undefined ? 0 : (ph - this._phPrev) / Math.max(dt, 1e-3); this._phPrev = ph;
+        this.legWhip = this.legWhip || new Spring(0, 3.2, 0.42);
+        this.legWhip.step(A.mode === 'swing' ? clamp(-pv * 0.28, -0.3, 0.3) : 0, dt);
+      }
       this.swingLegs(smooth(this.swLegW) * lerp(0.92, 1, Math.max(this.two.max, this.tuckW)), this.tuckW, hand);
     })();
     if (this.webW < 0.01 || !anc) return;
@@ -935,7 +956,8 @@ export class Animator {
       // small natural offset (critic r6 #5): the web-hand-side leg trails 6 cm / bends a bit more (mirrors with the hand)
       const lead = (S === hand ? -1 : 1) * 0.07;
       // polish: a touch more knee bend (~22 deg) and the feet trailing slightly behind
-      const hang = foot0.clone().add(new THREE.Vector3(0, -L * 0.94 + Math.abs(lead) * 0.3 + (lead < 0 ? 0.02 : 0), L * 0.1 + lead));
+      const whip = (this.legWhip?.x || 0) * (S === hand ? 0.8 : 1.15); // r13: the free leg whips a bit more (scissor read)
+      const hang = foot0.clone().add(new THREE.Vector3(0, -L * 0.94 + Math.abs(lead) * 0.3 + (lead < 0 ? 0.02 : 0) + Math.abs(whip) * 0.25, L * 0.1 + lead + whip));
       // tuck (critic r2 #5/#6): thighs forward-up toward the chest, shins folded back under — both legs identical
       // polish: knees pulled higher toward the chest on the upswing tuck
       const th = new THREE.Vector3(0, 0.62, 1).normalize().multiplyScalar(l1), sh = new THREE.Vector3(0, -1, -0.4).normalize().multiplyScalar(l2 * 0.98);
@@ -1541,7 +1563,7 @@ export class Animator {
     const k = smooth((v - 2.5) / 3); if (k < 0.01) return;
     const b = this.b.begin(pose);
     // user r9i: run with the torso pitched forward a little more (from the hips up)
-    const lean = k * lerp(0.08, 0.14, smooth((v - 8) / 5));
+    const lean = k * lerp(0.1, 0.2, smooth((v - 7) / 5)); // user r13: was 0.08..0.14
     b.rot('spine', X, lean * 0.45); b.rot('spine1', X, lean * 0.3); b.rot('chest', X, lean * 0.25);
     b.rot('head', X, -lean * 0.6);   // keep the gaze level
     for (const S of ['L', 'R']) {
@@ -1977,6 +1999,15 @@ export class Animator {
     } this.rd.curl(pose, F_, K.curlF, w); this.b.dirty = true;
   }
   // camera position relative to the character, in the wall frame: camera on the frame -X side -> left side on the wall
+  // user r13b: ASM2 wall perch variant on top of the side-on cling — the free arm drops loose and out, the chest and head turn
+  // away from the wall to look over the street, a slight lean off the facade. side = the side against the wall.
+  clingLookOut(pose, w, side = 'L') {
+    const b = this.b.begin(pose), F = side === 'L' ? 'R' : 'L', sx = F === 'L' ? 1 : -1;
+    b.rot('spine1', Y, sx * 0.18 * w); b.rot('chest', Y, sx * 0.22 * w); b.rot('chest', Z, -sx * 0.08 * w);
+    b.rot('neck', Y, sx * 0.25 * w); b.rot('head', Y, sx * 0.3 * w); b.rot('head', Z, -sx * 0.12 * w); b.rot('head', X, 0.12 * w);
+    b.aim('upperArm' + F, new THREE.Vector3(sx * 0.5, -1, 0.15), 0.75 * w);
+    b.aim('lowerArm' + F, new THREE.Vector3(sx * 0.25, -1, 0.35), 0.75 * w);
+  }
   pickClingSide(A, prev) {
     const f = window.__clingSide; if (f === 'L' || f === 'R') return f;
     const ld = A.lookDir; if (!ld || ld.lengthSq() < 1e-6) return prev || 'L';
@@ -2107,6 +2138,19 @@ function trickSpin(D, u, t, out) {
     }
     case 'tuckFlip': return out.setFromAxisAngle(X, TAU * smooth(remap(u, 0.05, 0.86))); // tucked forward somersault
     case 'scissor': return out.setFromAxisAngle(X, 0.3 * smooth(u / 0.25) * (1 - smooth((u - 0.68) / 0.3)));
+    // user r13 -------------------------------------------------------------------------------------------------------
+    case 'starfish': { // tips face-down over the street and banks slowly to one side and back (ASM2 free-fall)
+      const m = smooth(u / 0.25) * (1 - smooth((u - 0.72) / 0.26));
+      return out.setFromAxisAngle(X, 1.05 * m).multiply(_tq.setFromAxisAngle(Z, sd * 0.45 * Math.sin(Math.PI * smooth(u)) * m));
+    }
+    case 'superman': { // laid out head-first, a little barrel wobble
+      const m = smooth(u / 0.18) * (1 - smooth((u - 0.7) / 0.28));
+      return out.setFromAxisAngle(X, 1.4 * m).multiply(_tq.setFromAxisAngle(Y, sd * 0.25 * Math.sin(TAU * u) * m));
+    }
+    case 'twister': { // laid out (~75 deg) and TWO full twists about the long axis
+      const p = 1.3 * smooth(u / 0.18) * (1 - smooth((u - 0.74) / 0.24));
+      return out.setFromAxisAngle(X, p).multiply(_tq.setFromAxisAngle(Y, -sd * 2 * TAU * smoother(remap(u, 0.08, 0.84))));
+    }
   }
   return null;
 }
@@ -2143,6 +2187,24 @@ function trickPose(S, out, D, u, w) {
       leg[Sd] = [tv(sx * 0.08, -1, 0.06).lerp(tv(sx * 0.13, -0.16, 0.4), g), 0.97];
       arm[Sd] = [tv(sx * 0.6, 0.05, 0.35).lerp(tv(sx * 0.95, 0.15 + fl, 0.05), seg(u, 0.62, 0.86)), 0.92];
       arch = -0.5 * g; head = -0.35 * g;
+    } else if (tr === 'starfish') { // r13: limbs flung wide (X), back arched, head up to see the street -> gather for the landing
+      const k2 = seg(u, 0.7, 0.92), e0 = smooth(u / 0.18);
+      const a0 = tv(sx * 0.7, 0.2, 0.3), a1 = tv(sx * 1, 0.55 + fl * 2, 0.05), a2 = tv(sx * 0.6, -0.35, 0.45);
+      arm[Sd] = [a0.lerp(a1, e0).lerp(a2, k2), lerp(0.97, 0.88, k2)];
+      const l1 = tv(sx * 0.6, -0.8, -0.12 + fl), l2 = tv(sx * 0.12, -1, 0.12);
+      leg[Sd] = [tv(sx * 0.1, -1, 0).lerp(l1, e0).lerp(l2, k2), lerp(0.97, 0.95, k2)];
+      arch = 0.28 * e0 * (1 - k2); head = 0.55 * e0 * (1 - k2);
+    } else if (tr === 'superman') { // r13: lead fist punched forward (over the head = ahead when laid out), other arm along the side,
+      // legs long and together with a soft bend in the trailing knee; head up looking where he flies
+      const e0 = smooth(u / 0.15), k2 = seg(u, 0.72, 0.92);
+      arm[Sd] = [(lead ? tv(sx * 0.12, 1, 0.12) : tv(sx * 0.32, -0.85, -0.22 + fl)).lerp(tv(sx * 0.6, -0.4, 0.4), k2), lead ? lerp(0.98, 0.9, k2) : 0.9];
+      leg[Sd] = [tv(sx * 0.05, -1, lead ? -0.02 : -0.22 * e0), lead ? 0.99 : lerp(0.86, 0.97, k2)];
+      arch = 0.16 * e0 * (1 - k2); head = 0.6 * e0 * (1 - k2); pt = 0.5;
+    } else if (tr === 'twister') { // r13: arms out -> wrapped tight to the chest for the double twist -> thrown wide; legs crossed
+      const a0 = tv(sx * 0.95, 0.2, 0.05), a1 = tv(sx * 0.1, -0.35, 0.45), a2 = tv(sx * 0.95, 0.4 + fl, -0.1);
+      arm[Sd] = [a0.lerp(a1, seg(u, 0.06, 0.2)).lerp(a2, seg(u, 0.72, 0.9)), 0.95];
+      leg[Sd] = [tv(-sx * 0.05 * mid, -1, lead ? 0.04 : -0.04), 0.99];
+      arch = 0.05 * mid; head = 0.15 * mid; pt = 0.4;
     } else { // scissor: 1.5 air strides, arms counter-pumping
       const ph = TAU * 1.5 * u + (sx > 0 ? 0 : Math.PI), fwd = Math.sin(ph);
       leg[Sd] = [tv(sx * 0.08, -0.8, 0.78 * fwd), fwd > 0 ? 0.96 : 0.8];
@@ -2258,8 +2320,9 @@ function makeNodes(S) {
         const wl = smooth((v - 0.15) / 1.1);
         if (wl < 0.999) {
           if (D.cw < 0.999 && !C.sample(idleName, S.idleT, S.P.idle)) S.fallback('idle', S.idleT, S.P.idle);
+          else if (D.cw < 0.999) S.asm2Variant(D, 'idleASM2', S.idleT, S.P.idle, { on: D.cw < 0.05 && v < 0.2 }); // r13: Garfield idle
           if (D.cw > 0.001) {
-            if (D.cw >= 0.999) C.sample('fightIdle', S.idleT, S.P.idle);
+            if (D.cw >= 0.999) { C.sample('fightIdle', S.idleT, S.P.idle); D.taunt = D.taunt || {}; S.asm2Variant(D.taunt, 'tauntASM2', S.idleT, S.P.idle, { delay: 5, hold: 4.4, period: 15, on: v < 0.2 && !(A.threat > 0) }); } // r13b ASM2 taunt
             else { C.sample('fightIdle', S.idleT, S.P.fi); blendPoses(S.P.idle, S.P.fi, smooth(D.cw), S.P.idle); }
           }
         }
@@ -2453,8 +2516,10 @@ function makeNodes(S) {
         const sev = A.landing?.severity ?? 0.5;
         let clip = sub === 'landRoll' ? 'landRoll' : sub === 'landHard' ? 'landHard' : sub === 'landMedium' ? 'landMedium' : sub === 'landLight' ? 'landLight' : sev > 0.75 ? 'landHard' : sev > 0.35 ? 'landMedium' : 'landLight';
         clip = C.first(clip, 'land', 'landMedium');
-        L.data.clip = clip; L.data.t0 = clip ? C.contactTime(clip) : 0;
-        L.data.minHold = { landLight: 0.1, landMedium: 0.22, landHard: 0.55, landRoll: C.dur('landRoll') - L.data.t0 - 0.15, land: 0.3 }[clip] ?? 0.2;
+        // user r13b: big falls -> the ASM2 superhero landing (knee down, fist on the street, arm flung back), most of the time
+        if ((clip === 'landHard' && sev > 0.82) && C.has('landHeroASM2') && S.speedH < 3 && Math.random() < 0.65) clip = 'landHeroASM2';
+        L.data.clip = clip; L.data.t0 = clip === 'landHeroASM2' ? 0 : clip ? C.contactTime(clip) : 0;
+        L.data.minHold = { landLight: 0.1, landMedium: 0.22, landHard: 0.55, landHeroASM2: 0.9, landRoll: C.dur('landRoll') - L.data.t0 - 0.15, land: 0.3 }[clip] ?? 0.2;
       },
       hold(L, A) {
         if (!(A.mode === 'land' || A.mode === 'ground')) return false;
@@ -2474,17 +2539,23 @@ function makeNodes(S) {
     perch: {
       enter(L, A, prev) {
         L.data.landed = !(prev && (prev.name === 'zip' || prev.name === 'air' || prev.name === 'trick' || prev.name === 'pointLaunch' || prev.name === 'jumpLaunch'));
+        L.data.hero = prev && prev.name === 'zip' && C.has('zipPoseASM2') && Math.random() < 0.6; // r13b ASM2 web-shooter hero shot
         L.data.t0 = prev && prev.name === 'zip' && C.has('zipCatchLevel') ? 0.233 : C.contactTime('perchLand');
       },
       eval(L, A, out) {
         const idle = C.first('perchIdle', 'wallPerch');
         if (!C.sample(idle, L.t, S.P.a)) S.fallback('wallPerch', 0, S.P.a);
         L.data.clip = idle;
+        if (S.asm2Variant(L.data, 'perchASM2', L.t, S.P.a, { delay: 3, hold: 14, period: 24 }) > 0.5) L.data.clip = 'perchASM2'; // r13
         let land = 0;
         if (!L.data.landed && C.has('perchLand')) {
           const d = C.dur('perchLand') - L.data.t0, w = 1 - smooth((L.t - (d - 0.3)) / 0.3);
           if (w > 0.001) { oneShot('perchLand', L.data.t0 + L.t, S.P.b); blendPoses(S.P.a, S.P.b, w, S.P.a); L.data.clip = 'perchLand'; }
           land = 1;
+        }
+        if (L.data.hero) { // r13b: thrown up over the arrival, melts back into the crouch
+          const ht = L.t - 0.25, hw = smooth(ht / 0.15) * (1 - smooth((ht - (C.dur('zipPoseASM2') - 0.45)) / 0.4));
+          if (hw > 0.001) { C.sample('zipPoseASM2', Math.max(0, ht), S.P.asm, { loop: false }); blendPoses(S.P.a, S.P.asm, hw, S.P.a); if (hw > 0.5) L.data.clip = 'zipPoseASM2'; }
         }
         out.copy(S.P.a);
         // user feedback #7: deep frog squat on the perch point. Authored clips that already have it (knees wide) are
@@ -2746,6 +2817,11 @@ function makeNodes(S) {
         // the wall); locked while the cling is blended in, re-picked only once it has faded out (no pops)
         if (L.data.cw < 0.04 || !L.data.side) L.data.side = S.pickClingSide(A, L.data.side);
         S.clingPose(out, smooth(L.data.cw), L.data.side);
+        // user r13b: ASM2 wall perch — still on the wall for a while, he leans off it to look out over the street
+        L.data.stillT = moving ? 0 : (L.data.stillT || 0) + S.dt;
+        { const st = L.data.stillT - 4, want = L.data.cw > 0.9 && st > 0 && st % 14 < 8 ? 1 : 0;
+          L.data.lw = damp(L.data.lw || 0, want, 1.4, S.dt);
+          if (L.data.lw > 0.005) S.clingLookOut(out, smooth(L.data.lw), L.data.side); }
       },
       frame(L, A) {
         const wv = A.wall || {}, n = wv.normal;

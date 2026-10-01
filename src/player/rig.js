@@ -246,6 +246,8 @@ export async function loadCharacter(renderer) {
     root = gltf.scene; clips = gltf.animations || [];
     root.traverse(o => {
       if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; }
+      // user r13b perf: the raised web lines (~68k tris) and the lenses hug the body — they add nothing to the shadow maps
+      if (o.isMesh && (o.name === 'SpiderWebs' || o.name === 'Lenses' || o.parent?.name === 'SpiderWebs' || o.parent?.name === 'Lenses')) o.castShadow = false;
     });
     applySuitFabric(root); // Advanced-suit fabric look (user r-suitfabric; suits.js switches it off for other suits)
     bones = resolveBones(root);

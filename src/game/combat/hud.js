@@ -5,41 +5,50 @@ import * as THREE from 'three';
 import { clamp } from './util.js';
 
 const CSS = `
-#cmb-hud{position:fixed;inset:0;pointer-events:none;z-index:25;font-family:var(--sys-head,'Barlow Condensed','Arial Narrow',sans-serif);color:#fff;opacity:0;transition:opacity .45s}
+#cmb-hud{position:fixed;inset:0;pointer-events:none;z-index:25;font-family:var(--sys-body,'Manrope',system-ui,sans-serif);color:#fff;opacity:0;transition:opacity .45s}
 #cmb-hud.on{opacity:1}
-#cmb-hud .bars{position:absolute;left:2.2vw;top:3.2vh;width:min(24vw,360px);padding:9px 12px 10px;background:linear-gradient(90deg,rgba(7,13,31,.72),rgba(7,13,31,0));clip-path:polygon(0 0,100% 0,100% 100%,14px 100%,0 calc(100% - 14px))}
-#cmb-hud .hp{position:relative;height:15px;transform:skewX(-18deg);background:rgba(8,12,28,.62);box-shadow:0 0 0 1.5px rgba(255,255,255,.55),0 3px 12px rgba(0,0,0,.45);overflow:hidden}
+#cmb-hud .bars{position:absolute;left:2.2vw;top:3.2vh;width:min(24vw,360px);padding:10px 14px 12px;background:rgba(10,11,14,.5);border:1px solid rgba(255,255,255,.1);border-radius:14px;backdrop-filter:blur(16px);clip-path:none}
+#cmb-hud .hp{position:relative;height:8px;transform:none;background:rgba(255,255,255,.1);box-shadow:none;overflow:hidden;border-radius:99px}
 #cmb-hud .hp i{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:0 50%}
-#cmb-hud .hp .trail{background:#fff}
-#cmb-hud .hp .fill{background:linear-gradient(180deg,#ff4a4f,#d0141d 55%,#a20d15)}
+#cmb-hud .hp .trail{background:rgba(255,255,255,.45)}
+#cmb-hud .hp .fill{background:linear-gradient(90deg,#ff5a62,#ff2b3a)}
 #cmb-hud .hp.low .fill{animation:cmbLow .6s ease-in-out infinite}
 @keyframes cmbLow{50%{filter:brightness(1.6)}}
-#cmb-hud .lbl{display:flex;justify-content:space-between;font:700 12px/1 var(--sys-head,sans-serif);letter-spacing:.2em;color:#d7e0ff;margin:0 0 5px 2px;text-shadow:0 1px 3px #000}
-#cmb-hud .focus{display:flex;gap:5px;margin-top:7px;width:78%}
-#cmb-hud .focus b{position:relative;flex:1;height:9px;transform:skewX(-18deg);background:rgba(8,12,28,.6);box-shadow:0 0 0 1px rgba(255,255,255,.45);overflow:hidden}
-#cmb-hud .focus b i{position:absolute;inset:0;background:linear-gradient(180deg,#fff,#cfe6ff);transform-origin:0 50%}
-#cmb-hud .focus b.full{box-shadow:0 0 0 1px #fff,0 0 12px rgba(160,210,255,.9)}
-#cmb-hud .combo{position:absolute;right:4.5vw;top:38vh;text-align:right;opacity:0;transition:opacity .25s;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+#cmb-hud .lbl{display:flex;justify-content:space-between;font:650 11px/1 var(--sys-body,sans-serif);letter-spacing:.12em;color:rgba(255,255,255,.62);margin:0 0 6px 2px;text-shadow:none}
+#cmb-hud .focus{display:flex;gap:5px;margin-top:8px;width:78%}
+#cmb-hud .focus b{position:relative;flex:1;height:5px;transform:none;background:rgba(255,255,255,.1);box-shadow:none;overflow:hidden;border-radius:99px}
+#cmb-hud .focus b i{position:absolute;inset:0;background:#fff;transform-origin:0 50%}
+#cmb-hud .focus b.full{box-shadow:0 0 10px rgba(255,255,255,.35)}
+#cmb-hud .combo{position:absolute;right:4.5vw;top:38vh;text-align:right;opacity:0;transition:opacity .25s;text-shadow:0 2px 16px rgba(0,0,0,.5)}
 #cmb-hud .combo.on{opacity:1}
-#cmb-hud .combo .n{font:800 64px/0.9 var(--sys-head,sans-serif);letter-spacing:.02em}
-#cmb-hud .combo .n small{font-size:.45em;margin-right:4px;color:#ffb3b5}
-#cmb-hud .combo .t{font:700 14px/1 var(--sys-head,sans-serif);letter-spacing:.35em;color:#dfe6ff;margin-top:4px}
-#cmb-hud .combo .bar{height:3px;background:#e3262f;margin-top:8px;transform-origin:100% 50%}
-#cmb-hud .vig{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(200,0,10,.55) 100%);opacity:0}
-#cmb-hud .slow{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 50%,rgba(40,90,190,.35) 100%);opacity:0;transition:opacity .2s}
-#cmb-hud .banner{position:absolute;left:50%;top:27vh;transform:translateX(-50%) scale(.9);font:800 30px/1 var(--sys-head,sans-serif);letter-spacing:.3em;opacity:0;transition:opacity .2s,transform .2s;text-shadow:0 2px 10px rgba(0,40,120,.8);white-space:nowrap}
+#cmb-hud .combo .n{font:750 56px/0.9 var(--sys-head,sans-serif);letter-spacing:-.03em}
+#cmb-hud .combo .n small{font-size:.45em;margin-right:4px;color:rgba(255,43,58,.85)}
+#cmb-hud .combo .t{font:650 12px/1 var(--sys-body,sans-serif);letter-spacing:.2em;color:rgba(255,255,255,.55);margin-top:4px}
+#cmb-hud .combo .bar{height:2px;background:#ff2b3a;margin-top:8px;transform-origin:100% 50%;border-radius:99px}
+#cmb-hud .vig{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(200,0,10,.4) 100%);opacity:0}
+#cmb-hud .slow{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 50%,rgba(20,40,80,.28) 100%);opacity:0;transition:opacity .2s}
+#cmb-hud .banner{position:absolute;left:50%;top:27vh;transform:translateX(-50%) scale(.96);font:750 26px/1 var(--sys-head,sans-serif);letter-spacing:.12em;opacity:0;transition:opacity .2s,transform .2s;text-shadow:0 2px 18px rgba(0,0,0,.55);white-space:nowrap}
 #cmb-hud .banner.on{opacity:1;transform:translateX(-50%) scale(1)}
-#cmb-hud .msg{position:absolute;left:50%;bottom:22vh;transform:translateX(-50%);font:600 17px/1 var(--sys-head,sans-serif);letter-spacing:.15em;text-transform:uppercase;opacity:0;transition:opacity .25s;text-shadow:0 1px 4px #000}
+#cmb-hud .msg{position:absolute;left:50%;bottom:22vh;transform:translateX(-50%);font:600 15px/1 var(--sys-body,sans-serif);letter-spacing:.08em;text-transform:uppercase;opacity:0;transition:opacity .25s;text-shadow:0 1px 8px #000}
 #cmb-hud .msg.on{opacity:.95}
 #cmb-hud .arrows i{position:absolute;left:0;top:0;width:0;height:0;will-change:transform}
 #cmb-hud .arrows i:before{content:'';position:absolute;left:-15px;top:-11px;border-left:30px solid currentColor;border-top:11px solid transparent;border-bottom:11px solid transparent;filter:drop-shadow(0 0 6px currentColor)}
-#cmb-hud .ebar{position:absolute;left:0;top:0;width:90px;height:6px;margin-left:-45px;background:rgba(0,0,0,.55);box-shadow:0 0 0 1px rgba(255,255,255,.6);transform:skewX(-18deg);opacity:0}
-#cmb-hud .ebar i{position:absolute;inset:0;background:#e3262f;transform-origin:0 50%}
-#cmb-hud .ebar.stun i{background:#f5b82e}
-#cmb-hud .hint{position:absolute;left:50%;bottom:3vh;transform:translateX(-50%);width:max-content;max-width:min(58vw,760px);display:flex;flex-wrap:wrap;justify-content:center;gap:9px 16px;font:600 13px/1 var(--sys-body,sans-serif);letter-spacing:.06em;opacity:0;transition:opacity .8s;white-space:nowrap;text-shadow:0 1px 3px #000}
+#cmb-hud .ebar{position:absolute;left:0;top:0;width:90px;height:4px;margin-left:-45px;background:rgba(0,0,0,.45);box-shadow:none;transform:none;border-radius:99px;opacity:0}
+#cmb-hud .ebar i{position:absolute;inset:0;background:#ff2b3a;transform-origin:0 50%;border-radius:99px}
+#cmb-hud .ebar.stun i{background:#e8eaef}
+#cmb-hud .ebar.boss{width:140px;height:6px;margin-left:-70px;box-shadow:0 0 12px rgba(80,200,255,.35)}
+#cmb-hud .ebar.boss i{background:linear-gradient(90deg,#9af4ff,#2ab4ff)}
+#cmb-hud .boss{position:absolute;left:50%;top:4.4vh;transform:translateX(-50%);width:min(42vw,520px);opacity:0;transition:opacity .35s;pointer-events:none}
+#cmb-hud .boss.on{opacity:1}
+#cmb-hud .boss .nm{font:650 12px/1 var(--sys-body,sans-serif);letter-spacing:.28em;text-align:center;margin-bottom:8px;color:#c8f4ff;text-shadow:0 0 16px rgba(40,180,255,.5)}
+#cmb-hud .boss .hp{position:relative;height:8px;transform:none;background:rgba(4,12,28,.55);box-shadow:none;overflow:hidden;border-radius:99px}
+#cmb-hud .boss .hp i{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:0 50%}
+#cmb-hud .boss .hp .trail{background:#9fefff}
+#cmb-hud .boss .hp .fill{background:linear-gradient(90deg,#7af4ff,#1aa8ff)}
+#cmb-hud .hint{position:absolute;left:50%;bottom:3vh;transform:translateX(-50%);width:max-content;max-width:min(58vw,760px);display:flex;flex-wrap:wrap;justify-content:center;gap:9px 16px;font:550 13px/1 var(--sys-body,sans-serif);letter-spacing:.02em;opacity:0;transition:opacity .8s;white-space:nowrap;text-shadow:0 1px 8px #000}
 #cmb-hud .hint.on{opacity:.92}
 #cmb-hud .hint span{display:flex;align-items:center;gap:6px}
-#cmb-hud .hint kbd{font:800 11px/1 var(--sys-body,sans-serif);border:1.5px solid rgba(255,255,255,.85);border-radius:4px;padding:3px 5px;background:rgba(0,0,0,.4)}
+#cmb-hud .hint kbd{font:650 11px/1 var(--sys-body,sans-serif);border:1px solid rgba(255,255,255,.22);border-radius:7px;padding:3px 6px;background:rgba(10,11,14,.5)}
 `;
 
 export function createHud(c) {
@@ -53,6 +62,7 @@ export function createHud(c) {
     <div class="combo"><div class="n"><small>x</small><span>0</span></div><div class="t">COMBO</div><div class="bar"></div></div>
     <div class="arrows"></div><div class="ebars"></div>
     <div class="banner">PERFECT DODGE</div><div class="msg"></div>
+    <div class="boss"><div class="nm">ELECTRO</div><div class="hp"><i class="trail"></i><i class="fill"></i></div></div>
     <div class="hint">
       <span><kbd>LMB</kbd>Attack</span><span><kbd>Hold LMB</kbd>Launch / Slam</span><span><kbd>C</kbd>Dodge</span><span><kbd>Space</kbd>Jump (evades)</span>
       <span><kbd>E</kbd>Web Strike</span><span><kbd>F</kbd>Web</span><span><kbd>R</kbd>Throw</span><span><kbd>Q</kbd>Finisher</span><span><kbd>Z</kbd>Heal</span></div>`;

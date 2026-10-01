@@ -174,6 +174,8 @@ if (uSuitOn > 0.5) totalEmissiveRadiance += uSuitER * sysW.x + uSuitEB * sysW.y 
         if (!m) continue;
         if (m.name === 'SpiderSuit' || (!s && o.name === 'SpiderMan')) s = m;
         else if (m.name === 'Lens') l = m;
+        // multi-material suits (ASM2: SpiderSuitBlue / Webs / Emblem / Pads...): same colour-class remap, shared uniforms
+        else if (/^SpiderSuit./.test(m.name) && !m.userData.__patches?.has('systemsSuit')) patch(m);
         all.push(m);
       }
     });

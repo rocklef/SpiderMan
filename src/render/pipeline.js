@@ -898,6 +898,12 @@ void main() {
   });
 
   // ---------------------------------------------------------------- final
+  // (user r13) film looks applied over the base grade by pipeline.setLook()
+  const LOOKS = {
+    asm2: { saturation: 1.12, contrast: 1.15, bloom: 0.11, bloomThreshold: 1.0, vignette: 0.22, grain: 0.011, ca: 0.0006,
+      whiteBalance: [1.02, 1.0, 0.965], splitShadow: [0.84, 0.98, 1.13], splitHigh: [1.07, 1.01, 0.91], splitBalance: 0.42,
+      lift: [0.002, 0.006, 0.011], gain: [1.01, 1.0, 1.0] },
+  };
   const grade = {
     autoExposure: true,
     aeKey: -2.05,      // log2 luminance that maps to the base exposure (calibrated on the reference shots)
@@ -905,26 +911,25 @@ void main() {
     aeRange: 1.25,     // max EV correction either way
     aeSpeedUp: 2.5, aeSpeedDown: 1.4, // adaptation speeds (1/s)
     exposure: 0.8,
-    bloom: 0.11,     // (lighting2 r2) 0.07 -> 0.11 (sun / wet glints glow like the golden-hour ref) (lighting2 r1) additive, thresholded (was a 0.045 energy-conserving mix of the whole frame)
-    bloomThreshold: 0.9, bloomKnee: 0.7, // (lighting2 r2) 1.1 -> 0.9 // HDR (pre-exposure) luminance
-    saturation: 1.14, // (lighting2 r3) 1.0 -> 1.14 day refs: richer brick / foliage / sky (with the warm cast removed below)
-    contrast: 1.18, // (lighting2 r3) 1.14 -> 1.18  // (atmosphere r2: 1.15 -> 1.2, critic: 'grey, lifted blacks, no real darks') (lighting2 r1: 1.14, shade crushed)
-    pivot: 0.18,     // contrast pivot (display-linear, ~mid grey)
-    satKnee: 0.72,   // chroma soft-clip: saturation above this is compressed (keeps neon foliage/paint in gamut)
-    lift: new THREE.Vector3(-0.004, -0.004, -0.003), // (lighting2 r1) was -0.009: anything below ~1% went pure black // black point (atmosphere r2: deeper, was -0.004/-0.005/-0.008)
-    gamma: new THREE.Vector3(1.0, 1.0, 1.0),
-    gain: new THREE.Vector3(1.015, 1.0, 0.975), // (lighting2 r3) was 1.03/0.95: whole frame read sepia      // (atmosphere r1: 1.06/0.9 -> 1.03/0.95, the horizon / clouds read cream-yellow; refs' whites are neutral)
-    whiteBalance: new THREE.Vector3(1.0, 1.0, 1.0),
-    // (atmosphere r2) split toning: cool shadows / warm highlights (display-linear luma-weighted tint, luma-neutral)
-    splitShadow: new THREE.Vector3(0.95, 1.0, 1.07),
-    splitHigh: new THREE.Vector3(1.035, 1.0, 0.95), // (lighting2 r3) was 1.05/0.92
-    splitBalance: 0.3, // luma where the tint crosses over
-    vignette: 0.28,
-    ca: 0.0009,
+    bloom: 0.07,
+    bloomThreshold: 1.15, bloomKnee: 0.55,
+    saturation: 0.98,
+    contrast: 1.08,
+    pivot: 0.22,
+    satKnee: 0.68,
+    lift: new THREE.Vector3(0.004, 0.005, 0.008),
+    gamma: new THREE.Vector3(0.98, 0.99, 1.02),
+    gain: new THREE.Vector3(0.98, 1.0, 1.04),
+    whiteBalance: new THREE.Vector3(0.98, 1.0, 1.03),
+    splitShadow: new THREE.Vector3(0.90, 0.97, 1.10),
+    splitHigh: new THREE.Vector3(1.02, 1.0, 0.99),
+    splitBalance: 0.38,
+    vignette: 0.12,
+    ca: 0.00035,
     sharpen: Q.sharpen,
-    grain: 0.012,
-    shafts: 1.0,     // volumetric sun shaft strength
-    flare: 1.0,      // lens flare / sun glare strength
+    grain: 0.004,
+    shafts: 0.72,
+    flare: 0.55,
     gi: 0.5,         // (lighting2 r3) 1.0 -> 0.7 (less fill: darker shade, user) (lighting2 r1) SSGI bounce strength
     toe: 0.34, // (lighting2 r3) 0.36 -> 0.34 (tried 0.3: shade crushed to 0.004 vs topdown ref 0.023)
     // (lighting2 r2) 0.45 -> 0.36: the stronger sky / bounce fill lifts shade, keep some contrast (lighting2 r1) tonemap toe: linear slope floor under the ACES curve (0 = plain ACES)
@@ -1497,6 +1502,17 @@ void main() { vec4 t = texture(uSrc, vUv); vec3 c = uMode > 0.5 ? vec3(t.a - 1.0
       mbState.maskDistance = opts.maskDistance ?? null;
     },
     resetHistory() { resetHistory = true; },
+    // (user r13) film look: 'asm2' = The Amazing Spider-Man 2 grade (golden highlights, teal shadows, richer saturation +
+    // contrast, more bloom on lights / sky, heavier vignette + a little grain and lens fringe); 'standard' = the tuned base
+    setLook(name) {
+      const base = this._gradeBase || (this._gradeBase = Object.fromEntries(Object.entries(grade).map(([k, v]) => [k, v?.isVector3 ? v.clone() : v])));
+      const L = name === 'asm2' ? LOOKS.asm2 : {};
+      for (const [k, v] of Object.entries(base)) {
+        const t = L[k] ?? v;
+        if (grade[k]?.isVector3) grade[k].copy(Array.isArray(t) ? new THREE.Vector3(...t) : t); else grade[k] = t;
+      }
+      this.look = name;
+    },
     resetExposure() { aeReset = true; },
     /** metered log2 luminance {adapted, current} (debug; GPU readback) */
     readExposure() { const b = new Float32Array(4); renderer.readRenderTargetPixels(aeRT[aeIdx], 0, 0, 1, 1, b); return { adapted: b[0], current: b[1] }; },

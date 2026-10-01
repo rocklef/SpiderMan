@@ -14,14 +14,15 @@ export function createSettingsPage(sys) {
 
   const seg = (key, opts, label, sub) => `<div class="sys-opt"><label>${label}<small>${sub}</small></label><div class="sys-seg" data-k="${key}">${opts.map(([v, n]) => `<button data-v="${v}" class="${String(S()[key]) === String(v) ? 'on' : ''}">${n}</button>`).join('')}</div></div>`;
   const range = (key, min, max, step, label, sub, fmt = v => Math.round(v * 100) + '%') => `<div class="sys-opt"><label>${label}<small>${sub}</small></label><input type="range" class="sys-range" data-k="${key}" min="${min}" max="${max}" step="${step}" value="${S()[key]}"><span class="val" data-v="${key}">${fmt(+S()[key])}</span></div>`;
-  const FMT = { mouseSensitivity: v => v.toFixed(2) + '×', renderScale: v => Math.round(v * 100) + '%', fovOffset: v => Math.round(58 + v) + '°', hudScale: v => Math.round(v * 100) + '%', subtitleSize: v => Math.round(v * 100) + '%' };
+  const FMT = { mouseSensitivity: v => v.toFixed(2) + '×', renderScale: v => Math.round(v * 100) + '%', fovOffset: v => Math.round(62 + v) + '°', hudScale: v => Math.round(v * 100) + '%', subtitleSize: v => Math.round(v * 100) + '%' };
 
   function render() {
     el.querySelectorAll('.cats .sys-list-item').forEach(n => n.classList.toggle('on', n.dataset.c === cat));
     if (cat === 'graphics') main.innerHTML = `<div class="sys-h3">Graphics</div>
       ${seg('quality', [['low', 'Low'], ['med', 'Medium'], ['high', 'High']], 'Quality Preset', `Shadows, AO, clouds, DoF samples. Applying reloads the game (current: ${curQ}).`)}
       ${range('renderScale', 0.6, 1.25, 0.05, 'Render Resolution', 'Internal resolution scale. Lower for more FPS.', FMT.renderScale)}
-      ${seg('timeOfDay', [['day', 'Day'], ['morning', 'Morning'], ['sunrise', 'Sunrise'], ['sunset', 'Sunset'], ['dusk', 'Dusk'], ['night', 'Night'], ['overcast', 'Overcast']], 'Time of Day', 'Hand-tuned lighting preset')}
+      ${seg('look', [['asm2', 'ASM2 Film'], ['standard', 'Standard']], 'Film Look', 'Colour grade: The Amazing Spider-Man 2 (golden highlights, teal shadows, bloom) or the neutral grade')}
+      ${seg('timeOfDay', [['asm2', 'ASM2 Golden'], ['day', 'Day'], ['morning', 'Morning'], ['sunrise', 'Sunrise'], ['sunset', 'Sunset'], ['dusk', 'Dusk'], ['night', 'Night'], ['overcast', 'Overcast']], 'Time of Day', 'Hand-tuned lighting preset')}
       ${seg('daySun', [['a', 'Midday'], ['b', 'Late Morning'], ['c', 'Afternoon']], 'Day Sun', 'Sun direction for the Day preset (shadow angle)')}
       ${seg('puddles', [['true', 'On'], ['false', 'Off']], 'Puddles', 'Water and wet patches on the ground in dry weather (rain always wets the streets)')}`; // (lighting2 r3) fixed presets (no cycle)
     else if (cat === 'camera') main.innerHTML = `<div class="sys-h3">Camera</div>
@@ -46,7 +47,7 @@ export function createSettingsPage(sys) {
         .map(([a, k, p]) => `<div>${a}</div><div class="k"><span class="sys-key">${k}</span></div><div class="k" style="color:var(--sys-soft)">${p}</div>`).join('')}</div>`;
     else if (cat === 'audio') main.innerHTML = `<div class="sys-h3">Audio</div>
       ${range('masterVolume', 0, 1, 0.01, 'Master Volume', 'Everything')}
-      ${range('musicVolume', 0, 1, 0.01, 'Music', 'Ambient score and the swing pulse')}
+      ${range('musicVolume', 0, 1, 0.01, 'Music', 'Background playlist')}
       ${range('sfxVolume', 0, 1, 0.01, 'Effects', 'Web thwips, landings, footsteps, combat, alarms')}
       ${range('ambienceVolume', 0, 1, 0.01, 'City Ambience', 'Distant horns and sirens')}
       ${range('uiVolume', 0, 1, 0.01, 'Interface', 'Menus and notifications')}`;

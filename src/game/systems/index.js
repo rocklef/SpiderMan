@@ -17,6 +17,7 @@ import { createTowers } from './towers.js';
 import { createCollectibles } from './collectibles.js';
 import { createDevMenu } from '../../ui/menus/dev.js';
 import { createCrimes } from './crimes.js';
+import { createPoliceScenes } from './policescene.js'; // (user r13b) NYPD cruisers at live crime scenes
 import { createTravel } from './travel.js';
 import { createPhoto } from './photo.js';
 import { createSuits, SUITS } from './suits.js';
@@ -58,6 +59,7 @@ export function initSystems(ctx) {
   sys.towers = createTowers(sys);
   sys.collect = createCollectibles(sys);
   sys.crimes = createCrimes(sys);
+  sys.police = createPoliceScenes(sys);
   sys.travel = createTravel(sys);
   sys.photo = createPhoto(sys);
   sys.pause = createPauseMenu(sys);
@@ -83,6 +85,7 @@ export function initSystems(ctx) {
     audio.setVolumes(s);
     { const t = s.timeOfDay === 'cycle' || !s.timeOfDay ? 'day' : s.timeOfDay; ctx.lighting?.setTimeMode?.(t === 'day' ? ({ b: 'dayB', c: 'dayC' }[s.daySun] ?? 'day') : t); } // (user r-daysun) Day Sun variant // (lighting2 r3) fixed preset (old saves: 'cycle' -> day)
     ctx.lighting?.setDryPuddles?.(s.puddles !== false); // (user r-nopuddles)
+    ctx.pipeline?.setLook?.(s.look ?? 'asm2'); // (user r13) film grade
     if (s.renderScale !== appliedScale) {
       appliedScale = s.renderScale;
       if (appliedScale !== 1 || ctx.renderer.getPixelRatio() !== Math.min(devicePixelRatio, 1.5)) {
@@ -167,12 +170,16 @@ export function initSystems(ctx) {
       else if (e.type === 'ropeShoot') { tr.thwipT = 0.12; audio.sfx.thwip(1.05, 0.3); emit('player:thwip', { hand: 'R', rope: true }); }
       else if (e.type === 'ropeAnchor') audio.sfx.thwip(0.45, 0.1);
       else if (e.type === 'ropeFail') audio.sfx.deny();
+      else if (e.type === 'diveSling') audio.sfx.airRip?.(0.8 + 0.6 * e.k);   // user r13b
+      else if (e.type === 'clutchCatch') { audio.sfx.thwip(1.4); audio.duck?.(0.35, 0.5); }
     }
     { const sl = a?.sling; tr.creakT = (tr.creakT ?? 0) - dt;
       if (sl?.active && sl.anchors?.length && sl.tension > 0.04 && (sl.moving > 0.2 || sl.tension > 0.95) && tr.creakT <= 0) {
         tr.creakT = 0.26 - 0.14 * sl.tension + Math.random() * 0.05; audio.sfx.slingCreak?.(sl.tension, (Math.random() - 0.5) * 0.3);
         if (sl.tension > 0.95) tr.creakT += 0.35; // held at full stretch: sparse strained creaks
       } }
+    // user r13b: fast pass through the bottom of a swing arc -> air rip, panned to the web hand
+    if (a?.sub === 'swingBottom' && tr.sub !== 'swingBottom' && v.length() > 22) audio.sfx.airRip?.(Math.min(1.2, (v.length() - 18) / 30), (a?.swing?.hand === 'L' ? -0.25 : 0.25));
     // jump: anticipation cue on crouch, push-off on launch (C1 subs)
     const sub = a?.sub || '';
     if (sub !== tr.sub) {
@@ -278,6 +285,7 @@ export function initSystems(ctx) {
       sys.skillfx.update(dt);
       traversalEvents(dt);
       sys.crimes.update(dt, p);
+      sys.police.update(dt);
       sys.collect.update(dt, p);
       sys.travel.update(dt);
       interact(dt);

@@ -307,6 +307,25 @@ export function createFx(ctx) {
       const p = add.emit({ pos: from, vel: d.clone().multiplyScalar(160), life: Math.min(0.2, L / 160), size: 0.02, stretch: 30, color: [10, 7, 3.5], tile: 0 });
       return p;
     },
+    boltSparks(from, to) {
+      const d = _v.subVectors(to, from); const L = Math.max(0.2, d.length()); d.normalize();
+      for (let i = 0; i < 10; i++) {
+        const u = i / 9;
+        add.emit({ pos: _v2.copy(from).addScaledVector(d, L * u), life: 0.1 + rnd(0, 0.08), size: 0.12, size1: 0.28, color: [1.2, 4.8, 10], tile: 0, alpha: 0.9 });
+      }
+      add.emit({ pos: to, life: 0.12, size: 0.35, size1: 0.7, color: [2, 6, 12], tile: 1 });
+      for (let i = 0; i < 14; i++) {
+        const v = _v2.set(rnd(-1, 1), rnd(-0.4, 1.2), rnd(-1, 1)).normalize().multiplyScalar(rnd(4, 11));
+        add.emit({ pos: to, vel: v, life: rnd(0.12, 0.28), size: rnd(0.02, 0.05), size1: 0.01, stretch: 8, color: [1.4, 5, 10], tile: 0, drag: 5, grav: 6 });
+      }
+    },
+    shock(pos, radius = 2.4) {
+      add.emit({ pos: _v.copy(pos).setY(pos.y + 0.12), dir: _v2.set(1, 0, 0), life: 0.22, size: 0.25, size1: radius * 0.55, color: [1.2, 4.5, 9], alpha: 0.55, tile: 2 });
+      for (let i = 0; i < 16; i++) {
+        const a = i / 16 * Math.PI * 2;
+        add.emit({ pos: _v.copy(pos).setY(pos.y + 0.2), vel: _v2.set(Math.cos(a), rnd(0.4, 2.2), Math.sin(a)).multiplyScalar(radius * rnd(1.4, 2.4)), life: rnd(0.18, 0.35), size: 0.05, size1: 0.02, stretch: 6, color: [1.3, 5.2, 10], tile: 0, drag: 3 });
+      }
+    },
     // a web projectile (glowing blob) with a trailing strand from the hand
     ribbon(opts = {}) { const rb = ribbonPool.pop() || new Ribbon(scene); rb.width = opts.width || 0.014; return rb; },
     freeRibbon(rb) { rb.hide(); ribbonPool.push(rb); },

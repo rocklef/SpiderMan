@@ -30,6 +30,7 @@ import { createWebSystem } from './web.js';
 import { createSlingWebs } from './slingweb.js';
 import { createRopeWebs } from './ropeweb.js';
 import { createChaseCamera } from './camera.js';
+import { createSpeedFx } from './speedfx.js';
 import { createTraversal, H } from './traversal/traversal.js';
 import { SHOTS } from '../shots.js';
 
@@ -47,6 +48,7 @@ export async function createPlayer({ scene, world, camera, input, renderer }) {
   const slingWebs = createSlingWebs(scene, web);
   const ropeWebs = createRopeWebs(scene);
   const cam = createChaseCamera(camera, world);
+  const speedFx = createSpeedFx(scene); // user r13: wind streaks + speed lines at swing / dive speeds
   const trav = createTraversal({ world, cam, web, rig, camera });
   const s = trav.s, anim = trav.anim;
   cam.foliage = p => trav.anchors.canopies?.(p); // camera avoids tree canopies (no collision geometry)
@@ -55,6 +57,7 @@ export async function createPlayer({ scene, world, camera, input, renderer }) {
   cam.reset(s.pos, 0);
 
   let override = null, animator = null, frozen = false;
+  let websMesh; // user r13b perf LOD (see the occlusion check in update)
 
   // ---------------------------------------------------------------- fallback animation (C1 -> GLB clips / procedural)
   const F = { lastSub: '', lastMode: '', spin: 0, pose: makePose(), prev: makePose(), blend: 1, key: '' };
@@ -170,6 +173,10 @@ export async function createPlayer({ scene, world, camera, input, renderer }) {
       else if (e.type === 'waterSplash') cam.shake(0.25);
       else if (e.type === 'wall' && e.run) cam.shake(0.08);
       else if (e.type === 'ropeSnap') cam.shake(0.12 + 0.25 * e.severity); // slack web catching taut again
+      // user r13b: dive catch -> slingshot at the bottom of the arc; clutch catch (late, low, fast) -> a short slow-mo beat
+      else if (e.type === 'diveCatch') cam.shake(0.08 + 0.12 * e.k);
+      else if (e.type === 'clutchCatch') { cam.shake(0.25); cam.kick?.(0.5); try { window.__cmb?.slowmo?.(0.55, 0.32, 0.3); } catch {} }
+      else if (e.type === 'diveSling') { cam.kick?.(0.6 + 0.7 * e.k); cam.shake(0.1 + 0.15 * e.k); }
       else if (e.type === 'swingWallKick') cam.shake(0.1 + 0.3 * e.severity);
       else if (e.type === 'slingFail') cam.shake(0.05);
       else if (e.type === 'slingAttach') cam.shake(0.03);
@@ -183,8 +190,11 @@ export async function createPlayer({ scene, world, camera, input, renderer }) {
       wallNormal: s.wall.normal, facing: s.facing, dive: s.dive || s.gliding, tension: s.swing.tension, bank: s.swing.bank,
       sling: s.sling.active ? 0.25 + 0.75 * s.sling.tension : 0, walkK: s.mode === 'ground' ? s.walkK || 0 : 0,
       ropeDir: s.mode === 'rope' && s.rope ? s.rope.dir : null });
+    speedFx.update(dt, s.pos, s.vel, s.mode, camera);
     // character occlusion: never render the camera inside Spider-Man (hide the mesh when the lens is within ~0.8 m)
-    { const cd = camera.position.distanceTo(s.pos); rig.object.visible = cd > 0.85; }
+    { const cd = camera.position.distanceTo(s.pos); rig.object.visible = cd > 0.85;
+      // user r13b perf LOD: the raised web-line mesh is sub-pixel beyond ~30 m (photo mode / far shots): skip drawing it
+      const webs = websMesh ??= rig.object.getObjectByName('SpiderWebs') || false; if (webs) webs.visible = cd < 30; }
     // root transform
     object.quaternion.copy(q); object.position.copy(trav.rootPos);
     if (animator) animator.update(dt, anim, api);

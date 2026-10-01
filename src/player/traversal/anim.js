@@ -38,7 +38,7 @@
 //                rootPos = feet on the wall plane; 0 = crawl frame: bodyQ forward = -normal, rootPos 0.30 m off the plane)},
 //   swing.angle: rope angle from straight down (rad; +pi/2 = level in front = end of the full arc, no auto-release: may exceed pi/2 while held)
 //   swing.slack 0..1 (web slack, body free-falling while still attached), swing.kick 0..1 (wall-skip pose weight)
-//   landing: {severity 0..1}, trick: 'layout'|'corkscrew'|'tuckFlip'|'scissor'|null (swing-release / double-tap air
+//   landing: {severity 0..1}, trick: 'layout'|'corkscrew'|'tuckFlip'|'scissor'|'starfish'|'superman'|'twister'|null (swing-release / double-tap air
 //            tricks; never a tucked ball), trickSide: +1/-1 (layout: front/back flip; corkscrew: to his right/left),
 //   lookDir: Vector3 (camera forward),
 //   // extras for the animation layer:

@@ -1,3 +1,7 @@
 node_modules/
 dist/
 .DS_Store
+
+# ASM2 pipeline: large leftover intermediates (not used by the build; tasm2_baked.glb exceeds GitHub's 100 MB limit)
+tools/asm2/spiderman_asm2.glb
+tools/asm2/tasm2_baked.glb

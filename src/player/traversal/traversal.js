@@ -16,17 +16,17 @@ export const H = 0.95;               // body centre above the feet
 export const R = 0.36;               // capsule radius
 export const HEIGHT = 1.8;           // capsule height
 const STEP = 0.55;                   // max step-up (curbs, low ledges)
-const G = 24, GS = 25;               // gravity (air / swinging)
+const G = 24, GS = 29;               // gravity (air / swinging) — user r13 'high octane': heavier web arcs (was GS 25)
 const WALK = 2.6, RUN = 9.8, SPRINT = 15.5;
 // user r12: holding Shift on the ground = a natural slow WALK (~1.4 m/s, ~1.85 steps/s). walkK (0..1) eases between the
 // run and walk target speeds over ~0.4 s (press / release while moving blends, never snaps); gentle start / stop ramps
 // and turn rate while walking. Ground sprint stays removed (user r4 #9) — 'sprint' only appears from carried momentum.
 const WALK_SLOW = 1.4, WALK_EASE = 7, WALK_ACC = 5.5, WALK_DEC = 3.5, WALK_TURN = 4.5;
 const WALLRUN = 14;   // user r9r: wall run movement speed (the animation still plays at the ground-run cadence)   // user r9g: faster run (was 8.2)
-const VMAX = 45;
+const VMAX = 56;   // user r13: was 45
 // swing momentum chain (user r10g): each swing started within CHAIN_BUF s of the last web raises the speed ceilings and the
 // release push; not swinging for CHAIN_BUF s (or standing still on something) resets it
-const CHAIN_BUF = 1.6, CHAIN_MAX = 6, CHAIN_CAP = 2.5, CHAIN_REL = 1.5;
+const CHAIN_BUF = 1.8, CHAIN_MAX = 8, CHAIN_CAP = 3, CHAIN_REL = 2.2;   // user r13: was 1.6 / 6 / 2.5 / 1.5
 // user r9w: E on a wall = a short web-zip straight up the facade: burst v0 -> v1 over dur (~9 m), one web to the wall
 // `reach` m above (snaps off at `snap`), `cd` s between zips (no E-spam flying up a tower)
 // user r9z: longer + stronger — two webs (one per hand) ~42 m up (clamped under the wall top, off the top of the screen),
@@ -35,16 +35,16 @@ const WZIP = { dur: 0.95, v0: 46, v1: 16, reach: 42, snap: 0.75, cd: 1.2 };   //
 // user r11: Space-release = speed + height boost, any other release = speed only (no extra height). The forward boost is
 // horizontal along the travel direction; a release trick (TRICK_DEF) adds its own forward boost at the snap, so an untricked
 // release gets REL_NOTRICK up front instead (the totals match either way).
-const SWING_JUMP = 4.0;     // Space-release: extra m/s forward on top of the plain release (user r4 #10, r11)
+const SWING_JUMP = 6.5;  // user r13: was 4.0     // Space-release: extra m/s forward on top of the plain release (user r4 #10, r11)
 const SWING_JUMP_UP = 16;   // Space-release: vertical pop (m/s; vy = max(vy + pop, 0.85 pop), capped at SWING_JUMP_VY) (user r10c: 7.5 = ~2 m rise read as no pop; now ~5 m)
 const SWING_JUMP_VY = 22;   // Space-release: max upward speed after the pop (no rocket off a rising arc)
-const REL_NOTRICK = 4.0;    // release with no trick: forward m/s standing in for the trick's snap boost
+const REL_NOTRICK = 5.5; // user r13: was 4.0    // release with no trick: forward m/s standing in for the trick's snap boost
 const REL_UP = 9;           // every swing release: upward pop (m/s; vy = max(vy + pop, 0.75 pop), capped at REL_UP_VY) —
 const REL_UP_VY = 16;       // user r10f: chained swings must climb ("give more height after each swing"); Space-release pops higher
 const SWING_DIP = 6;
 const SWING_GAIN = 5;       // climb assist target: exit this far above the attach height (m) — user r10f        // max arc dip below the attach height (m) — user r10f
-const RELEASE_BOOST = 1.5; // m/s added along the release velocity when the web is let go (x skill 'swingReleaseBoost')
-const SWING_DRAG = 0.0022;  // aerodynamic drag while swinging (1/m): a held swing with no input decays like a real pendulum
+const RELEASE_BOOST = 2.5; // user r13: was 1.5 // m/s added along the release velocity when the web is let go (x skill 'swingReleaseBoost')
+const SWING_DRAG = 0.0016;  // user r13: was 0.0022 (keeps more of the dive speed through the arc)  // aerodynamic drag while swinging (1/m): a held swing with no input decays like a real pendulum
 const PUMP_MAX_ANG = 1.15;  // pumping (W along the swing) never adds energy beyond what reaches ~75 deg of arc (chains stay in the canyon)
 const JUMP = 11.2, JUMP_MAX = 19.5;  // tap jump (~2.6 m, user r9: higher) / full charge (~7.9 m)
 const UP = new THREE.Vector3(0, 1, 0);
@@ -59,6 +59,10 @@ const TRICK_DEF = {
   corkscrew: { dur: 0.78, snap: 0.35, boost: 5.0, up: 0.6, steer: 0.35, side: 2.5 }, // barrel roll: speed + steering / drift toward the stick
   // (user r10b: the cartwheel 'fan' spin is removed — sideways stick input now drifts the corkscrew instead)
   scissor: { dur: 0.7, snap: 0.32, boost: 3.5, up: 1.4 },                // running-in-air stride
+  // user r13 (PS5 / ASM2 flavour)
+  starfish: { dur: 1.15, snap: 0.3, boost: 3.0, up: 2.0 },               // ASM2 spread-eagle free-fall: face down, limbs flung wide, slow bank
+  superman: { dur: 1.0, snap: 0.22, boost: 7.0, up: 0 },                 // flat head-first dive, lead fist forward: the fast one
+  twister: { dur: 0.95, snap: 0.4, boost: 6.0, up: 0.6, steer: 0.25, side: 1.5 }, // double corkscrew, laid out flat
 };
 const TRICKS = Object.keys(TRICK_DEF);
 const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt));
@@ -341,7 +345,7 @@ export function createTraversal({ world, cam, web, rig, camera }) {
   function slingLaunch() {
     const S = s.sling, k = S.tension;
     const D = slingDir(new THREE.Vector3());
-    const sp = 24 + 28 * k;
+    const sp = 28 + 34 * k; // user r13: was 24 + 28k
     s.vel.copy(D).multiplyScalar(sp * Math.cos(SL_ELEV)); s.vel.y = sp * Math.sin(SL_ELEV);
     s.pos.y += 0.05; s.speed = 0; s.charging = false;
     setMode('air', 'pointLaunch'); s.airT = 0; s.apexY = feetY(); s.swingCooldown = 0.45; s.wallCooldown = 0.5; s.relT = 0;
@@ -458,9 +462,9 @@ export function createTraversal({ world, cam, web, rig, camera }) {
       }
     }
     if (s.dive) { // dive: tuck and gain speed, keep heading
-      const n = Math.hypot(s.vel.x, s.vel.z); if (n > 2) { const k = Math.min(n + 3 * h, 30) / n; s.vel.x *= k; s.vel.z *= k; }
+      const n = Math.hypot(s.vel.x, s.vel.z); if (n > 2) { const k = Math.min(n + 5 * h, 38) / n; s.vel.x *= k; s.vel.z *= k; } // user r13: was +3/s to 30
     }
-    if (hs > 32 + 3 * (s.chain || 0)) { s.vel.x *= 1 - 0.12 * h; s.vel.z *= 1 - 0.12 * h; }
+    if (hs > 38 + 3.5 * (s.chain || 0)) { s.vel.x *= 1 - 0.12 * h; s.vel.z *= 1 - 0.12 * h; } // user r13: was 32 + 3/chain
     if (hs > 12 && relK >= 1 && (s.sub === 'release' || s.sub === 'trick' || I.swing)) corridor(h, inD);
     const prevFeet = feetY();
     s.pos.addScaledVector(s.vel, h);
@@ -713,6 +717,13 @@ export function createTraversal({ world, cam, web, rig, camera }) {
         if (u > S.pivot.y - y0) S.pivot.y = y0 + u;
         S.ropeTarget = Math.max(S.ropeTarget, s.pos.distanceTo(S.pivot) - 1);
       } }
+    // user r13b: DIVE CATCH — a web caught out of a fast dive banks the fall: at the bottom of the arc the stored speed is
+    // slung forward (S.diveK 0..1). A catch low over the street at full dive speed is a CLUTCH catch (slow-mo beat).
+    { const sp0 = s.vel.length(), falling = s.vel.y < -20 || s.dive;
+      S.diveK = falling && sp0 > 24 ? clamp((sp0 - 22) / 32, 0, 1) : 0; S.diveBoosted = false;
+      const hf = heightAboveFloor();
+      if (S.diveK > 0.3 && s.vel.y < -26 && hf < 22) events.push({ type: 'clutchCatch', k: S.diveK, h: hf });
+      else if (S.diveK > 0) events.push({ type: 'diveCatch', k: S.diveK }); }
     S.rope = s.pos.distanceTo(S.pivot); S.t = 0; S.tension = 0; S.tautT = 0; S.cornered = false; S.y0 = s.pos.y;
     S.slack = 0; S.slackT = 0; S.kick = 0; S.kickCd = 0; S.apexed = false; S.angMax = -9;
     // momentum conservation: redirect velocity along the swing tangent keeping speed (dive speed becomes swing speed)
@@ -723,8 +734,8 @@ export function createTraversal({ world, cam, web, rig, camera }) {
     { const tan = _v2.copy(s.vel).addScaledVector(rd, -vr);
       if (tan.lengthSq() > 0.01) s.vel.copy(tan.normalize().multiplyScalar(sp * (vr < 0 ? 0.96 : 1)));
       else if (sp > 0.5) s.vel.copy(S.dir).multiplyScalar(sp); }
-    if (hs < 11) { // web yank when starting slow — along the arc tangent (never toward the pivot, which would slacken the web)
-      const yd = _v4.copy(S.dir).addScaledVector(rd, -S.dir.dot(rd)); if (yd.lengthSq() > 1e-3) s.vel.addScaledVector(yd.normalize(), (11 - hs) * 0.7);
+    if (hs < 13) { // web yank when starting slow — along the arc tangent (never toward the pivot, which would slacken the web)
+      const yd = _v4.copy(S.dir).addScaledVector(rd, -S.dir.dot(rd)); if (yd.lengthSq() > 1e-3) s.vel.addScaledVector(yd.normalize(), (13 - hs) * 0.85);
     }
     capSpeed();
     const right = _v3.set(-S.dir.z, 0, S.dir.x);
@@ -799,7 +810,7 @@ export function createTraversal({ world, cam, web, rig, camera }) {
       const Ecap = -GS * S.rope * Math.cos(PUMP_MAX_ANG);               // energy that just reaches PUMP_MAX_ANG
       const room = clamp((Ecap - E) / (GS * 1.5), 0, 1);
       const bottom = Math.max(0, rd.y);
-      s.vel.addScaledVector(tan.normalize(), 9 * bottom * bottom * push * room * h);
+      s.vel.addScaledVector(tan.normalize(), 13 * bottom * bottom * push * room * h); // user r13: was 9
     }
     // climb assist (user r10f "web swings are supposed to give height each time"): on the rising half of the arc, with the
     // stick along the swing, the web drives him along the arc until he is SWING_GAIN above the height he attached at, so
@@ -818,14 +829,14 @@ export function createTraversal({ world, cam, web, rig, camera }) {
         const vt = s.vel.dot(tg);
         if (vt > -1.5) {
           const u = clamp((ang - 0.15) / 0.85, 0, 1);
-          const vmin = clamp(0.65 * Math.sqrt(GS * S.rope), 10, 18) * u * u * (3 - 2 * u);
+          const vmin = clamp(0.72 * Math.sqrt(GS * S.rope), 12, 22) * u * u * (3 - 2 * u); // user r13: was 0.65, 10..18
           if (vt < vmin) s.vel.addScaledVector(tg, Math.min(vmin - vt, 30 * h));
         }
       }
     }
     // aerodynamic drag (quadratic): a held swing with no input settles into a decaying pendulum within a few passes
     s.vel.multiplyScalar(Math.max(0, 1 - SWING_DRAG * (1 - 0.08 * (s.chain || 0)) * spd * h)); // a momentum chain slips through the air (r10g)
-    if (spd > 37 + 3 * (s.chain || 0)) s.vel.multiplyScalar(1 - 0.3 * h); // soft top speed (hard cap VMAX; dives exceed it); a swing chain lifts it (r10g)
+    if (spd > 44 + 3.5 * (s.chain || 0)) s.vel.multiplyScalar(1 - 0.3 * h); // user r13: was 37 + 3/chain // soft top speed (hard cap VMAX; dives exceed it); a swing chain lifts it (r10g)
     // reel toward target length (lifts off the street), faster if the feet approach the floor
     const fl = floorAt(s.pos.x, s.pos.z, feetY() + 0.2);
     const clearance = feetY() - fl;
@@ -891,7 +902,17 @@ export function createTraversal({ world, cam, web, rig, camera }) {
     const f2 = floorAt(s.pos.x, s.pos.z, feetY() + 0.4);
     if (feetY() < f2 + 0.3) { s.pos.y = f2 + 0.3 + H; if (s.vel.y < 0) s.vel.y = 0; }
     // phase / sub-state
-    S.phase = swingPhase(); S.angle = swingAngle();
+    { const prevPh = S.phase ?? -1;
+      S.phase = swingPhase(); S.angle = swingAngle();
+      // r13b dive catch: the slingshot fires as the body passes the bottom of the first arc (taut web, moving forward)
+      if (S.diveK > 0 && !S.diveBoosted && prevPh < 0 && S.phase >= 0 && S.tautT > 0.05) {
+        S.diveBoosted = true;
+        const t = _v4.copy(s.vel); if (t.lengthSq() > 1) {
+          t.normalize(); const dv = (5 + 9 * S.diveK) * (stats.releaseBoost ?? 1);
+          s.vel.addScaledVector(t, dv); capSpeed(vmaxC() + 6);
+          events.push({ type: 'diveSling', k: S.diveK, dv });
+        }
+      } }
     S.angMax = Math.max(S.angMax ?? -9, S.angle);
     if (!S.apexed && (S.angle < S.angMax - 0.06 && S.angMax > 0.2 || S.t > 4)) S.apexed = true;
     if (S.kick > 0.3) setSub('wallKick');
@@ -946,7 +967,10 @@ export function createTraversal({ world, cam, web, rig, camera }) {
     const hv = hdir(s.vel, _v2) || _v2.set(Math.sin(s.facing), 0, Math.cos(s.facing));
     const inD = inputDir(I || lastInput || { move: { x: 0, y: 0 } }, _v3);
     const lat = inD.z * hv.x - inD.x * hv.z; // stick component to the RIGHT of travel (+) / left (-)
-    const W = { tuckFlip: 1, corkscrew: 1, layout: 1, scissor: 0.7 };
+    const W = { tuckFlip: 1, corkscrew: 1, layout: 1, scissor: 0.7, starfish: 0.8, superman: 0.9, twister: 0.8 };
+    if (hs > 26 && steep < 0.35) { W.superman += 1.6; W.twister += 1.0; }   // r13: flat & fast -> the speed tricks
+    if (steep > 0.4 || heightAboveFloor() > 30) W.starfish += 1.4;          // r13: high / rising -> ASM2 spread-eagle
+    if (Math.abs(lat) > 0.35) W.twister += 1.2;
     if (steep < 0.3) { W.tuckFlip += 2.2; W.corkscrew += 1.4; W.layout = 0.6; }
     else if (steep > 0.55) { W.layout += 2.4; W.tuckFlip = 0.25; W.scissor = 0.4; }
     if (hs > 22) { W.tuckFlip += 1; W.corkscrew += 0.6; }
@@ -1088,7 +1112,10 @@ export function createTraversal({ world, cam, web, rig, camera }) {
       s.facing = Math.atan2(s.vel.x, s.vel.z); events.push({ type: 'wallJump' }); return;
     }
     if (I.swingPressed) { // RMB on a wall: kick off it and swing away (search starts right after the push-off)
-      s.vel.copy(n).multiplyScalar(9).addScaledVector(UP, 7).addScaledVector(cam.forwardFlat(_v2).addScaledVector(n, -_v2.dot(n)), 6);
+      // user r13b: a wall RUN carries its speed into the swing (along-wall velocity kept at ~90 %, upward run speed partly)
+      const run = _v4.copy(s.vel).addScaledVector(n, -s.vel.dot(n)), up = Math.max(0, run.y); run.y = 0;
+      s.vel.copy(n).multiplyScalar(9).addScaledVector(UP, 7 + up * 0.45).addScaledVector(cam.forwardFlat(_v2).addScaledVector(n, -_v2.dot(n)), 6);
+      if (W.fast) s.vel.addScaledVector(run, 0.9);
       setMode('air', 'wallJump'); s.airT = 0; s.apexY = feetY(); s.wallCooldown = 0.5; s.swingCooldown = 0.1; s.groundSwing = true;
       s.facing = Math.atan2(s.vel.x, s.vel.z); events.push({ type: 'wallJump' }); return;
     }
@@ -1548,7 +1575,7 @@ export function createTraversal({ world, cam, web, rig, camera }) {
     if (hs < 2) { cam.forwardFlat(hv); hs = 0; } else hv.divideScalar(hs);
     const inD = lastInput ? inputDir(lastInput, new THREE.Vector3()) : null;   // fresh vector: inputDir uses _v5 internally
     if (inD && inD.lengthSq() > 0.09) hv.lerp(inD.setY(0).normalize(), 0.35).normalize(); // a little stick steering
-    const fwd = Math.min(VMAX - 6, Math.max(hs, 12) + 6);
+    const fwd = Math.min(VMAX - 6, Math.max(hs, 14) + 9); // user r13: was +6
     s.vel.copy(hv).multiplyScalar(fwd).addScaledVector(UP, 13 + Math.max(0, travelV.y) * 0.3);
     setMode('air', 'pointLaunch'); s.airT = 0; s.apexY = feetY(); s.swingCooldown = 0.3; s.wallCooldown = 0.3; s.relT = 0;
     s.facing = Math.atan2(hv.x, hv.z); s.trick = null; s.grounded = false;
@@ -1571,7 +1598,7 @@ export function createTraversal({ world, cam, web, rig, camera }) {
         if (bestD) dir.copy(bestD); else if (out.lengthSq() > 0.09) dir.copy(out);
       } }
     const carry = Math.min(12, Math.hypot(travelV.x, travelV.z) * 0.25);
-    s.vel.copy(dir).multiplyScalar(15 + carry).addScaledVector(UP, 20.5);
+    s.vel.copy(dir).multiplyScalar(18 + carry).addScaledVector(UP, 22.5); // user r13: was 15 / 20.5
     setMode('air', 'pointLaunch'); s.airT = 0; s.apexY = feetY(); s.swingCooldown = 0.35; s.wallCooldown = 0.3;
     s.facing = Math.atan2(dir.x, dir.z); s.trick = null;
     events.push({ type: 'pointLaunch' });
@@ -1579,7 +1606,7 @@ export function createTraversal({ world, cam, web, rig, camera }) {
   function webDash() { // Insomniac web-zip: forward air dash when no zip point is targeted
     const f = cam.forwardFlat(new THREE.Vector3());
     const hs = Math.hypot(s.vel.x, s.vel.z);
-    const sp = Math.min(Math.max(hs + 8, 22), VMAX);
+    const sp = Math.min(Math.max(hs + 11, 26), VMAX); // user r13: was +8 / 22
     s.vel.x = f.x * sp; s.vel.z = f.z * sp; s.vel.y = Math.max(s.vel.y, 3.5);
     const tgt = s.pos.clone().addScaledVector(f, 16); tgt.y += 3;
     s.zip.target.copy(tgt); s.zip.t = 0; s.zip.dash = true;
@@ -1594,7 +1621,7 @@ export function createTraversal({ world, cam, web, rig, camera }) {
   // impulse toward the anchor (mostly horizontal + a little lift) at the moment the web hits. Body stays in the normal air
   // animation (no zip flight); the animator layers a one-arm yank (anim.quick). Mid-swing: the swing web is let go first.
   // Chained presses alternate hands and diminish (1, 0.8, 0.65, 0.55 ...), reset on landing / after 1.6 s.
-  const QUICK = { dv: 12, hCap: 40, cd: 0.55, minD: 25, maxD: 80, nearD: 12, web: 0.26, dur: 0.62 };
+  const QUICK = { dv: 15, hCap: 40, cd: 0.55, minD: 25, maxD: 80, nearD: 12, web: 0.26, dur: 0.62 };
   function quickAnchor(out, nOut) {
     const L = cam.forward ? cam.forward(new THREE.Vector3()) : s.lookDir, inD = lastInput ? inputDir(lastInput, new THREE.Vector3()) : null;
     let yaw = Math.atan2(L.x, L.z);

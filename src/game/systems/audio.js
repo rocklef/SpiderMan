@@ -1,32 +1,26 @@
-// OWNER: systems engineer. (audio r1) File-based WebAudio: pre-rendered ambient cinematic score + tonal SFX, all made
-// offline by tools/audio/build.py (numpy synthesis, no samples; see tools/audio/README.md). No noise beds, no wind,
-// no whooshes: speed / height are felt through the music's swing layers.
-//   music:  4 synchronised seamless loops (72 BPM x 64 bars, same harmony) started on one AudioContext time:
-//           day / night beds (equal-power crossfade from nightK) + pulseA / pulseB swing layers (gain from traversal speed)
-//   sfx:    sprites (trav / combat / ui / world) + JSON map (manifest.json: offsets, variations, design gain, voice limit,
-//           pitch jitter); random variation (never the same twice in a row) + small rate jitter
-//   world:  positional loops (bank alarm bell, police siren) and horns through HRTF PannerNodes with distance rolloff
+// OWNER: systems engineer. File-based WebAudio: playlist score + tonal SFX.
+//   music:  two full tracks from public/assets/audio, played in order on a loop (crossfaded)
+//   sfx:    sprites (trav / combat / ui / world) + JSON map (manifest.json)
+//   world:  positional loops (bank alarm bell, police siren) and horns through HRTF PannerNodes
 // Buses: master -> {music (duck + pause low-pass), world (pause muffle) -> {sfx, ambience}, ui}; volumes from settings.
 // Loading is lazy (first user gesture), async and never blocks the game; calls before load are silently dropped.
 import * as THREE from 'three';
-import { nightK } from '../../render/daynight.js';
 
 const BASE = '/assets/audio/';
-const STEMS = ['day', 'night', 'pulseA', 'pulseB'];
+const MUSIC_XFADE = 4;
 const SPRITE_BUS = { trav: 'sfx', combat: 'sfx', ui: 'ui', world: 'ambience' };
 const clamp = THREE.MathUtils.clamp;
-const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
 export function createAudio() {
   const AC = window.AudioContext || window.webkitAudioContext;
   let ac = null, ready = false, man = null, master, comp, muffle, musicLP, musicDuck, loadErr = null;
   const vol = { master: 0.8, music: 0.6, sfx: 0.9, ambience: 0.75, ui: 0.7 };
-  const MUSIC_K = 0.18; // (user r-quietmusic) "reduce the music to very low amount": the whole score sits ~15 dB under (the slider scales on top)
+  const MUSIC_K = 0.45; // playlist tracks sit under SFX; the music slider scales on top
   const bus = {}, bufs = {}, mbufs = {}, lbufs = {}, voices = new Map();
-  const music = { started: false, t0: 0, layer: {}, night: 0, I: 0, dayG: 0, nightG: 0, aG: 0, bG: 0 };
+  const music = { started: false, t0: 0, idx: 0, cur: null, prev: null, timer: 0 };
   const listenerPos = new THREE.Vector3(), _f = new THREE.Vector3();
   const loops = new Map(); // id -> { kind, pos, src, gain, panner }
-  let paused = false, combat = false;
+  let paused = false;
 
   const G = (v = 1) => { const g = ac.createGain(); g.gain.value = v; return g; };
   const now = () => ac.currentTime;
@@ -63,23 +57,48 @@ export function createAudio() {
       // small sprites first (UI / traversal are heard right away), then the loops, then the music stems
       await Promise.all(Object.entries(man.sprites).map(async ([k, s]) => { bufs[k] = await fetchBuf(s.url); }));
       await Promise.all(Object.entries(man.loops).map(async ([k, s]) => { lbufs[k] = await fetchBuf(s.url); }));
-      for (const k of STEMS) if (man.music[k]) mbufs[k] = await fetchBuf(man.music[k].url);
+      const tracks = man.music?.tracks || [];
+      await Promise.all(tracks.map(async (tr) => {
+        try { mbufs[tr.id] = await fetchBuf(tr.url); }
+        catch (e) { console.warn('[audio] track failed:', tr.id, e); }
+      }));
       startMusic();
     } catch (e) { loadErr = String(e?.message || e); console.warn('[audio] load failed:', loadErr); }
   }
 
   // ------------------------------------------------------------------ music
+  function playlist() { return (man?.music?.tracks || []).filter((tr) => mbufs[tr.id]); }
   function startMusic() {
-    if (music.started || !STEMS.every(k => mbufs[k])) return;
-    const t0 = now() + 0.25; music.t0 = t0;
-    for (const k of STEMS) {
-      const s = ac.createBufferSource(); s.buffer = mbufs[k]; s.loop = true; // whole buffer = the loop (same length for every stem)
-      const g = G(0); s.connect(g).connect(bus.music); s.start(t0);
-      music.layer[k] = { s, g };
-    }
+    const tracks = playlist();
+    if (music.started || !tracks.length) return;
     music.started = true;
-    // slow fade-in of the whole score
+    const t0 = now() + 0.25;
     musicDuck.gain.setValueAtTime(0, t0); musicDuck.gain.linearRampToValueAtTime(1, t0 + 5);
+    playTrack(0, t0, true);
+  }
+  function playTrack(idx, at = now(), fadeIn = true) {
+    const tracks = playlist();
+    if (!tracks.length) return;
+    const tr = tracks[((idx % tracks.length) + tracks.length) % tracks.length];
+    const buf = mbufs[tr.id]; if (!buf) return;
+    const t = Math.max(at, now());
+    const fade = Math.min(MUSIC_XFADE, buf.duration * 0.12);
+    if (music.cur?.g) {
+      const pg = music.cur.g.gain;
+      pg.cancelScheduledValues(t); pg.setValueAtTime(1, t); pg.linearRampToValueAtTime(0, t + fade);
+      try { music.cur.s.stop(t + fade + 0.05); } catch { /* already stopped */ }
+      music.prev = music.cur;
+    }
+    const s = ac.createBufferSource(); s.buffer = buf;
+    const g = G(0); s.connect(g).connect(bus.music);
+    if (fadeIn) { g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + fade); }
+    else g.gain.setValueAtTime(1, t);
+    s.start(t);
+    music.idx = tracks.indexOf(tr); music.t0 = t; music.cur = { s, g, id: tr.id, dur: buf.duration };
+    const nextAt = t + buf.duration - fade;
+    clearTimeout(music.timer);
+    const wait = Math.max(50, (nextAt - now()) * 1000);
+    music.timer = setTimeout(() => playTrack(music.idx + 1, now(), true), wait);
   }
   function duck(amount = 0.4, hold = 0.8, release = 0.9) {
     if (!ready || !music.started) return;
@@ -155,6 +174,12 @@ export function createAudio() {
     release(pan = 0) { play('release', { pan }); },
     slingCreak(t = 0.5, pan = 0) { const k = clamp(t, 0, 1); play('creak', { k: k * 3.4, gain: 0.45 + 0.6 * k, pan }); },
     slingLaunch(t = 1) { const k = clamp(t, 0, 1); play('launch', { gain: 0.6 + 0.4 * k }); if (k > 0.6) duck(0.15, 0.3); },
+    // user r13b: air rip — the fast pass through the bottom of a swing arc / a dive-catch slingshot (filtered noise sweep)
+    airRip(k = 1, pan = 0) {
+      if (!ready) return; k = clamp(k, 0, 1.4);
+      oldNoise({ f: 380, f2: 2600, q: 0.9, dur: 0.42, g: 0.22 * k, a: 0.12, pan });
+      oldNoise({ f: 1800, f2: 600, q: 1.4, dur: 0.5, g: 0.1 * k, at: 0.14, a: 0.05, pan: -pan });
+    },
     whoosh(speed = 20) { play('swipe', { gain: clamp(speed / 22, 0.4, 1.1) }); }, // combat swings: a soft tonal swipe, no air noise
     land(sev = 0.5) {
       const t = clamp(sev, 0, 1);
@@ -227,27 +252,32 @@ export function createAudio() {
 
   // ------------------------------------------------------------------ per-frame mix
   let hornT = 14, sirenT = 40;
-  function update(dt, { camera, playerPos, speed = 0, ground = 0, swinging = false, mode = '', inCombat = false }) {
+  // user r13b: speed wind — a looped stereo noise bed through a band-pass whose level / brightness rise with speed in the
+  // air (swing, fall, zip), plus a low rumble layer past ~35 m/s. Silent on foot and when paused.
+  let wind = null;
+  function windNodes() {
+    if (wind || !ac) return wind;
+    const n = Math.floor(ac.sampleRate * 4), b = ac.createBuffer(2, n, ac.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); let br = 0; for (let i = 0; i < n; i++) { br = br * 0.985 + (Math.random() * 2 - 1) * 0.15; d[i] = br + (Math.random() * 2 - 1) * 0.35; } }
+    const src = ac.createBufferSource(); src.buffer = b; src.loop = true;
+    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.7;
+    const g = G(0);
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 140;
+    const g2 = G(0);
+    src.connect(bp).connect(g).connect(bus.sfx); src.connect(lp).connect(g2).connect(bus.sfx); src.start();
+    return (wind = { bp, g, g2, k: 0 });
+  }
+  function update(dt, { camera, playerPos, ground = 0, speed = 0, mode = '' }) {
     if (!ready) return;
-    const t = now();
-    combat = inCombat;
-    // music: day / night bed (equal power) from the lighting preset's nightK; swing layers from traversal intensity
-    if (music.started) {
-      const nk = sstep(0.3, 0.85, nightK.value || 0);
-      music.night += (nk - music.night) * Math.min(1, dt / 2.5);
-      const trav = swinging || /swing|air|zip|wall|rope|launch|dive/.test(mode);
-      let target = trav ? sstep(5, 30, speed) : sstep(9, 22, speed) * 0.45; // running fast on the street: a hint of pulse
-      if (combat) target = Math.max(target, 0.55);
-      if (paused) target = 0;
-      const tau = target > music.I ? 1.1 : 5.5; // rise quickly, linger after the swing ends
-      music.I += (target - music.I) * Math.min(1, dt / tau);
-      const bed = 1 - 0.18 * music.I;
-      music.dayG = Math.cos(music.night * Math.PI / 2) * bed; music.nightG = Math.sin(music.night * Math.PI / 2) * bed;
-      music.aG = sstep(0.06, 0.45, music.I) * 0.95; music.bG = sstep(0.5, 0.92, music.I) * 0.9;
-      const L = music.layer;
-      L.day.g.gain.setTargetAtTime(music.dayG, t, 0.15); L.night.g.gain.setTargetAtTime(music.nightG, t, 0.15);
-      L.pulseA.g.gain.setTargetAtTime(music.aG, t, 0.2); L.pulseB.g.gain.setTargetAtTime(music.bG, t, 0.25);
-    }
+    { const W = windNodes(), air = mode === 'swing' || mode === 'air' || mode === 'zip';
+      if (W) {
+        const want = paused || !air ? 0 : clamp((speed - 9) / 46, 0, 1);
+        W.k += (want - W.k) * (1 - Math.exp(-(want > W.k ? 3 : 2) * dt));
+        const t = now(), k = W.k;
+        W.g.gain.setTargetAtTime(0.32 * k * k + 0.03 * k, t, 0.08);
+        W.bp.frequency.setTargetAtTime(380 + 2400 * k * k, t, 0.1);
+        W.g2.gain.setTargetAtTime(0.5 * clamp((speed - 34) / 24, 0, 1) * k, t, 0.15);
+      } }
     // sparse distant city life (tonal): a far horn now and then near street level, a passing siren every minute or two
     const h = Math.max(0, playerPos.y - ground);
     const street = clamp(1 - (h - 4) / 70, 0, 1);
@@ -276,8 +306,8 @@ export function createAudio() {
   }
   function state() {
     const r3 = x => Math.round(x * 1000) / 1000;
-    return { ready, ctx: ac?.state || 'none', sr: ac?.sampleRate, loadErr, sprites: Object.keys(bufs), loops: Object.keys(lbufs), stems: Object.keys(mbufs),
-      music: { started: music.started, pos: music.started ? r3(((now() - music.t0) % (mbufs.day?.duration || 1))) : 0, I: r3(music.I), night: r3(music.night), day: r3(music.dayG), nightG: r3(music.nightG), pulseA: r3(music.aG), pulseB: r3(music.bG) },
+    return { ready, ctx: ac?.state || 'none', sr: ac?.sampleRate, loadErr, sprites: Object.keys(bufs), loops: Object.keys(lbufs), tracks: Object.keys(mbufs),
+      music: { started: music.started, track: music.cur?.id || null, pos: music.started ? r3(now() - music.t0) : 0 },
       voices: [...voices.values()].reduce((a, v) => a + v.length, 0), activeLoops: loops.size };
   }
 

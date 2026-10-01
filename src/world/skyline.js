@@ -368,5 +368,36 @@ export function heroTowerReserves() {
       lmCyl(tile, S, Z, cx, cz, 1.8, y2 + 7, y2 + 12, METAL([2.4, 2.42, 2.45]), { n: 8, zipTop: false });
       lmCyl(tile, S, Z, cx, cz, 1.1, y2 + 12, y2 + 40, METAL([2.7, 2.72, 2.75]), { n: 8, r1: 0.2 });
     } });
+  // ------------------------------------------------------------------ (user r13) Oscorp Tower — The Amazing Spider-Man 2
+  // Upper East Side (worlddata 'ues' landmark). Dark blue-green glass shaft on a black granite podium, chamfered corners,
+  // two angled setbacks, a slanted glass crown with a lit lantern band, a fin and a mast; the OSCORP sign near the top is
+  // emissive geometry added by landmarks.js buildStandalone (R.oscorp). ~360 m: it reads over Midtown from the park.
+  R.push({ name: 'oscorp', oscorp: true, x0: 478, x1: 538, z0: -1268, z1: -1209, seed: 2014, plazaDepth: 8, // (r13b) runs to the street: 8 m forecourt plaza
+    arch: () => ({ type: 'glass', style: STYLE.CURTAIN, layer: LAYER.METAL, base: LAYER.GRANITE, floorH: 4.2, bayW: 1.5, winW: 0.97, winH: 0.82, gH: 10,
+      height: 340, margin: 0, depth: 0.04, tint: [0.72, 0.9, 0.95], glass: 1, seed: 20.14, // tinted teal-green glass (film look)
+      shape: (lot0, A, P) => {
+        const lot = { ...lot0, z1: lot0.z1 - 8 }; // tower set back behind the forecourt plaza
+        const cx = (lot.x0 + lot.x1) / 2, cz = (lot.z0 + lot.z1) / 2, hx = (lot.x1 - lot.x0) / 2, hz = (lot.z1 - lot.z0) / 2;
+        const pod = { ...P, style: STYLE.PUNCHED, layer: LAYER.GRANITE, winW: 0.7, winH: 0.75, depth: 0.25, margin: 0.8, tint: [0.45, 0.47, 0.5] };
+        const y0 = snapA(A, 10), y1 = snapA(A, 34), y2 = snapA(A, 230), y3 = snapA(A, 300), y4 = snapA(A, 340);
+        // (r13b) double-height glass lobby under the granite podium (the facade shader lights its interior at night)
+        const lob = { ...P, style: STYLE.CURTAIN, layer: LAYER.METAL, floorH: y0 / 2, bayW: 3.0, winW: 0.96, winH: 0.9, tint: [0.95, 1.0, 1.02], glass: 4 };
+        return [{ ...lot, y0: 0, y1: y0, p: lob, parapet: 0, roof: false },
+          { ...lot, y0, y1, p: pod, parapet: 1.2, roof: true },
+          ...chamferPlan(cx, cz, Math.min(hx, hz) - 2, 2 * (Math.min(hx, hz) - 2) - 9, y1, y2, P),
+          ...chamferPlan(cx + 3, cz, Math.min(hx, hz) - 6, 2 * (Math.min(hx, hz) - 6) - 8, y2, y3, P),
+          ...chamferPlan(cx + 6, cz - 2, Math.min(hx, hz) - 10, 2 * (Math.min(hx, hz) - 10) - 7, y3, y4, P)];
+      } }),
+    extra(lot, bld, { S, Z, tile }) {
+      const A = bld.A, yT = bld.H, cx = (lot.x0 + lot.x1) / 2 + 6, cz = (lot.z0 + lot.z1 - 8) / 2 - 2;
+      const gp = { floorH: A.floorH, bayW: A.bayW, winW: A.winW, winH: A.winH, layer: LAYER.METAL, base: LAYER.METAL, seed: 20.14, margin: 0, depth: 0.04, tint: [0.72, 0.9, 0.95], glass: 1 };
+      // slanted crown: stepped glass tiers shrinking toward the east (reads as one angled blade from the avenues)
+      let y = yT, x0 = cx - 13, x1 = cx + 13;
+      for (let i = 0; i < 4; i++) { lmBox(tile, S, Z, x0, y, cz - 10 + i, x1, y + 2 * A.floorH, cz + 10 - i, gp, { style: STYLE.CURTAIN, zip: i === 3 }); y += 2 * A.floorH; x0 += 5; }
+      // stainless fin + mast
+      lmBox(tile, S, Z, x1 - 1.2, y, cz - 0.6, x1, y + 26, cz + 0.6, METAL([2.5, 2.52, 2.56], 14), { zip: false });
+      lmCyl(tile, S, Z, x1 - 0.6, cz, 0.9, y + 26, y + 58, METAL([2.7, 2.72, 2.75]), { n: 8, r1: 0.18 });
+      bld.oscorpTop = { y: yT, cx, cz }; // sign / lantern placement (landmarks.js)
+    } });
   return R;
 }

@@ -2,26 +2,16 @@
  "version": 1,
  "sr": 44100,
  "music": {
-  "pulseA": {
-   "url": "/assets/audio/music_pulseA.ogg",
-   "len": 9408000,
-   "dur": 213.33333333333334
-  },
-  "day": {
-   "url": "/assets/audio/music_day.ogg",
-   "len": 9408000,
-   "dur": 213.33333333333334
-  },
-  "night": {
-   "url": "/assets/audio/music_night.ogg",
-   "len": 9408000,
-   "dur": 213.33333333333334
-  },
-  "pulseB": {
-   "url": "/assets/audio/music_pulseB.ogg",
-   "len": 9408000,
-   "dur": 213.33333333333334
-  }
+  "tracks": [
+   {
+    "id": "england",
+    "url": "/assets/audio/music_moving_to_england.mp3"
+   },
+   {
+    "id": "zimmer",
+    "url": "/assets/audio/music_rest_of_my_life.mp3"
+   }
+  ]
  },
  "sprites": {
   "trav": {

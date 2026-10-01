@@ -27,15 +27,15 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}canvas{display:bl
 #boot figcaption::before{content:'';width:26px;height:1px;background:rgba(244,246,251,.7);box-shadow:0 0 6px rgba(0,0,0,.5)}
 /* each slide: fade in 1.2 s, hold, fade out while the next one fades in (N slides x S s, loop) */
 @keyframes bootFade{0%{opacity:0}3.2%{opacity:1}16.7%{opacity:1}19.9%{opacity:0}100%{opacity:0}}
-@keyframes bootKB{0%{transform:scale(1.10) translate3d(1.2%,.6%,0)}20%{transform:scale(1.0) translate3d(-.6%,-.3%,0)}100%{transform:scale(1.0) translate3d(-.6%,-.3%,0)}}
-@keyframes bootKB2{0%{transform:scale(1.0) translate3d(-1%,.4%,0)}20%{transform:scale(1.09) translate3d(.8%,-.5%,0)}100%{transform:scale(1.09) translate3d(.8%,-.5%,0)}}
+@keyframes bootKB{0%{transform:scale(1.04) translate3d(.4%,.2%,0)}20%{transform:scale(1.0) translate3d(-.2%,-.1%,0)}100%{transform:scale(1.0) translate3d(-.2%,-.1%,0)}}
+@keyframes bootKB2{0%{transform:scale(1.0) translate3d(-.3%,.15%,0)}20%{transform:scale(1.03) translate3d(.3%,-.2%,0)}100%{transform:scale(1.03) translate3d(.3%,-.2%,0)}}
 /* legibility shading lives in each slide, under its caption (a global layer above the slides dimmed the captions) */
 #boot figure::after{content:'';position:absolute;inset:0;background:
   linear-gradient(0deg,rgba(3,4,9,.92) 0%,rgba(3,4,9,.55) 18%,rgba(3,4,9,0) 42%),
   linear-gradient(180deg,rgba(3,4,9,.5) 0%,rgba(3,4,9,0) 20%),
   radial-gradient(ellipse at 50% 45%,rgba(0,0,0,0) 55%,rgba(0,0,0,.55) 100%)}
 #boot figcaption{z-index:1}
-#boot .grain{position:absolute;inset:-50%;opacity:.07;mix-blend-mode:overlay;animation:bootGrain .9s steps(6) infinite;
+#boot .grain{position:absolute;inset:-50%;opacity:.03;mix-blend-mode:overlay;animation:none;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 @keyframes bootGrain{0%{transform:translate3d(0,0,0)}20%{transform:translate3d(-6%,4%,0)}40%{transform:translate3d(5%,-7%,0)}60%{transform:translate3d(-3%,8%,0)}80%{transform:translate3d(7%,2%,0)}100%{transform:translate3d(0,0,0)}}
 #boot .ui{position:absolute;left:clamp(20px,4vw,64px);right:clamp(20px,4vw,64px);bottom:clamp(26px,6vh,64px)}

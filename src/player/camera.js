@@ -33,13 +33,14 @@ const noise = (t, s) => Math.sin(t * 1.7 + s) * 0.5 + Math.sin(t * 3.1 + s * 2.3
 
 export function createChaseCamera(camera, world) {
   const c = {
-    yaw: 0, pitch: 0.14, dist: 4.2, fov: 58, roll: 0,
+    yaw: 0, pitch: 0.14, dist: 6.5, fov: 62, roll: 0,
     target: new THREE.Vector3(), targetVel: new THREE.Vector3(), lookAt: new THREE.Vector3(),
-    lastLook: 10, trauma: 0, time: 0, heightOff: 0, collDist: 4.2, sideOff: 0.32,
+    lastLook: 10, trauma: 0, time: 0, heightOff: 0, collDist: 6.5, sideOff: 0.32,
     punch: 0, punchV: 0, dip: 0, dipV: 0, sens: 0.0023, anchorLean: 0,
   };
-  c.reset = (pos, yaw) => { c.target.copy(pos); c.target.y += 0.55; c.targetVel.set(0, 0, 0); c.yaw = yaw; c.pitch = 0.14; c.collDist = c.dist;
-    c.autoYaw = undefined; c.lagOff?.set(0, 0, 0); c.lagOffV?.set(0, 0, 0); c.jumpOff?.set(0, 0, 0); c.jumpOffV?.set(0, 0, 0); c._lastGoal = null; c.anchorLean = 0; c.anchorLeanV = 0; };
+  c.reset = (pos, yaw) => { c.target.copy(pos); c.target.y += 0.55; c.targetVel.set(0, 0, 0); c.yaw = yaw; c.pitch = 0.14;
+    c.dist = 6.5; c.distV = 0; c.fov = 62; c.fovV = 0; c.collDist = 6.5; c.collDistV = 0; c.heightOff = 0; c.heightOffV = 0;
+    c.autoYaw = undefined; c.lagOff?.set(0, 0, 0); c.lagOffV?.set(0, 0, 0); c.jumpOff?.set(0, 0, 0); c.jumpOffV?.set(0, 0, 0); c._lastGoal = null; c.anchorLean = 0; c.anchorLeanV = 0; c.occGoal = null; c.pivCap = undefined; };
   c.shake = amt => { c.trauma = Math.min(1, c.trauma + amt); };
   // launch kick (web-zip slingshot / point launch): camera pulls back and the FOV widens, then springs back
   c.kick = amt => { c.kickV = (c.kickV || 0) + 9 * amt; c.trauma = Math.min(1, c.trauma + 0.08 * amt); };
@@ -138,26 +139,37 @@ export function createChaseCamera(camera, world) {
     const leadW = _v2.set(vel.x * lw, vel.y * (swinging || air ? 0.015 : lw), vel.z * lw); if (leadW.length() > 2.0) leadW.setLength(2.0);
     sdV(c, 'lead', leadW, 0.45, dt);
     // ---- distance / height / FOV by context
-    let wantDist = 4.0, wantH = 0, wantFov = 58, wantSide = 0.32;
+    let wantDist = 6.4, wantH = 0, wantFov = 62, wantSide = 0.32;
     if (m === 'ground') {
-      wantDist = 3.9 + clamp((speed - 8) * 0.07, 0, 0.7); wantSide = 0.35;
+      wantDist = 6.2 + clamp((speed - 8) * 0.07, 0, 0.7); wantSide = 0.35;
       // user r12: Shift walk — the camera settles a little closer and lower (spring-damped via walkK, eased itself)
       const wk = (p.walkK || 0) * (1 - smooth(speed, 2.2, 4.5));
       wantDist -= 0.45 * wk; wantH -= 0.1 * wk;
     }
-    else if (swinging) { wantDist = 3.6 + clamp((speed - 12) * 0.025, 0, 0.7); wantH = 0.35 + (p.tension || 0) * 0.25; wantSide = 0.15; }
-    else if (air) { wantDist = dive ? 3.9 : 3.8 + clamp((speed - 12) * 0.025, 0, 0.7); wantH = dive ? 0.9 : 0.15; wantSide = 0.2; }
-    else if (m === 'wall') { wantDist = 4.8; wantH = p.sub === 'wallRun' ? 0.2 : 0; wantSide = 0; }
-    else if (m === 'perch') { wantDist = 4.3; wantH = 0.25; wantSide = 0.4; }
-    else if (m === 'rope') { wantDist = 4.1; wantH = 0.4; wantSide = 0.2; }
-    if (m === 'land' || p.sub?.startsWith?.('land')) wantDist = 4.2;
+    else if (swinging) { wantDist = 5.8 + clamp((speed - 12) * 0.035, 0, 1.3); wantH = 0.35 + (p.tension || 0) * 0.25; wantSide = 0.15; }
+    else if (air) { wantDist = dive ? 6.4 : 6.0 + clamp((speed - 12) * 0.035, 0, 1.3); wantH = dive ? 0.9 : 0.15; wantSide = 0.2; }
+    else if (m === 'wall') { wantDist = 7.0; wantH = p.sub === 'wallRun' ? 0.2 : 0; wantSide = 0; }
+    else if (m === 'perch') { wantDist = 6.6; wantH = 0.25; wantSide = 0.4; }
+    else if (m === 'rope') { wantDist = 6.4; wantH = 0.4; wantSide = 0.2; }
+    if (m === 'land' || p.sub?.startsWith?.('land')) wantDist = 6.5;
     // ledge climb: the camera rises ahead of him so it is already over the lip when he flips onto the roof
     const ledge = p.sub === 'ledgeGrab' || p.sub === 'ledgeClimb';
     if (ledge) { wantH = 1.4; c.pitch = damp(c.pitch, 0.42, 4, dt); }
-    wantFov = 58 + 13 * smooth(speed, 12, 44) + (dive ? 5 : 0);
+    // user r13 'high octane': the lens stretches much harder with speed (62 -> ~84 deg at full chain speed, dives wider)
+    wantFov = 62 + 20 * smooth(speed, 10, 52) + (dive ? 8 : 0);
+    // swing-bottom whoosh: passing the bottom of a fast arc kicks the FOV wide and dips the camera (the g-load)
+    if (swinging && p.sub === 'swingBottom' && c._lastSub !== 'swingBottom' && speed > 18) {
+      const k = smooth(speed, 18, 46); c.punchV += 55 * k; c.dipV -= 2.2 * k; c.trauma = Math.min(1, c.trauma + 0.12 * k);
+    }
+    // web release / trick launch: a smaller outward kick
+    if (air && p.sub === 'trick' && c._lastSub !== 'trick') c.punchV += 30 * smooth(speed, 14, 40);
+    c._lastSub = p.sub;
     // web slingshot: the camera draws back, lifts and widens as the webs stretch (p.sling 0..1, 0 = off)
     if (p.sling > 0) { wantDist += 1.6 * p.sling; wantH += 0.3 * p.sling; wantFov += 8 * p.sling * p.sling; }
     // all critically damped (release/attach/landing change every one of these targets in a single frame)
+    // user r13: the wide speed FOV stretches the city, not Spider-Man — the boom shortens with the lens so he keeps ~his
+    // screen size (65 % compensation: a little shrink still reads as speed)
+    { const tf = Math.tan(THREE.MathUtils.degToRad(31)) / Math.tan(THREE.MathUtils.degToRad(Math.max(62, c.fov) / 2)); wantDist *= 1 - 0.65 * (1 - tf); }
     sd(c, 'dist', wantDist, 0.55, dt);
     sd(c, 'heightOff', wantH, 0.5, dt);
     sd(c, 'sideOff', wantSide, 0.6, dt);
@@ -174,7 +186,7 @@ export function createChaseCamera(camera, world) {
     c._lastVelYaw = velYaw;
     sd(c, 'yawRate', hs > 3 ? clamp(dy / Math.max(dt, 1e-3), -3, 3) * Math.min(1, (hs - 3) / 17) : 0, 0.3, dt);
     sd(c, 'bankS', swinging ? (p.bank || 0) : 0, 0.35, dt);
-    const wantRoll = clamp(-c.yawRate * 0.04, -0.09, 0.09) - c.bankS * 0.05;
+    const wantRoll = clamp(-c.yawRate * 0.055, -0.14, 0.14) - c.bankS * 0.1; // user r13: was 0.04 / 0.09 / 0.05
     c.roll = damp(c.roll, wantRoll, 3, dt);
     // ---- compose
     const fwd = c.forward(_v2);
@@ -193,7 +205,7 @@ export function createChaseCamera(camera, world) {
     const probe = (ox, oy) => {
       o.copy(pivot).addScaledVector(right, ox); o.y += oy;
       const h = world.raycast(o, back, c.dist + 0.4);
-      if (h) allowed = Math.min(allowed, Math.max(0.5, h.distance - 0.35));
+      if (h) allowed = Math.min(allowed, Math.max(2.2, h.distance - 0.35));
     };
     probe(0, 0); probe(0.3, 0); probe(-0.3, 0); probe(0, 0.25); probe(0, -0.25);
     // foliage (tree canopies have no collision): never park the camera inside leaves
@@ -203,7 +215,7 @@ export function createChaseCamera(camera, world) {
         o.copy(pivot).addScaledVector(back, t);
         let inside = false;
         for (const q of cans) { const dy = o.y - q.cy; if (Math.abs(dy) < q.r * 0.75 && (o.x - q.pos.x) ** 2 + (o.z - q.pos.z) ** 2 < q.r * q.r) { inside = true; break; } }
-        if (inside) { allowed = Math.max(0.8, t - 0.35); break; }
+        if (inside) { allowed = Math.max(2.0, t - 0.35); break; }
       }
     }
     // Occluded (vault over a parapet, wall entry, perched on a facade ledge, alleys): never collapse onto the
@@ -266,8 +278,10 @@ export function createChaseCamera(camera, world) {
     const sh = c.trauma * c.trauma;
     camera.up.set(0, 1, 0);
     camera.lookAt(lookAt);
-    camera.rotateZ(c.roll + sh * 0.045 * noise(c.time * 22, 3));
-    camera.rotateX(sh * 0.035 * noise(c.time * 25, 1)); camera.rotateY(sh * 0.035 * noise(c.time * 24, 7));
+    // high-speed wind rumble (user r13): a fine, fast buffet once he's really flying (never on foot)
+    const rum = (swinging || air) ? 0.0045 * smooth(speed, 26, 56) : 0;
+    camera.rotateZ(c.roll + sh * 0.045 * noise(c.time * 22, 3) + rum * noise(c.time * 37, 11));
+    camera.rotateX(sh * 0.035 * noise(c.time * 25, 1) + rum * noise(c.time * 41, 5)); camera.rotateY(sh * 0.035 * noise(c.time * 24, 7));
     const f = c.fov + c.punch + 9 * Math.max(0, c.kickK || 0);
     if (Math.abs(camera.fov - f) > 0.01) { camera.fov = f; camera.updateProjectionMatrix(); }
     camera.updateMatrixWorld();

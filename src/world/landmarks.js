@@ -12,6 +12,7 @@ import { STYLE, LAYER } from './facade.js';
 import { G } from './layout.js';
 import { heroTowerReserves } from './skyline.js'; // skyline agent: ESB / Chrysler / 432 / CPT / One57 / One WTC
 import { buildGrandCentral } from './grandcentral.js';
+import { nightK } from '../render/daynight.js';
 
 const snap = (A, y) => A.gH + Math.max(1, Math.round((y - A.gH) / A.floorH)) * A.floorH;
 const inset = (m, a, b = a, c = a, d = a) => ({ x0: m.x0 + a, x1: m.x1 - b, z0: m.z0 + c, z1: m.z1 - d });
@@ -166,5 +167,66 @@ export function buildStandalone({ scene, gen, T }) {
     const mesh = new THREE.Mesh(g, mat); mesh.name = 'timesSquareScreens'; mesh.receiveShadow = true;
     scene.add(mesh);
   }
+  buildOscorpSign(scene, gen);
   for (const R of gen.reserves) if (R.plaza && R.lot) PLAZAS.push({ x0: R.lot.x0, z0: R.lot.z0, x1: R.lot.x1, z1: R.lot.z1, kind: 'times' });
+}
+
+// (user r13) Oscorp Tower (skyline.js 'oscorp'): the OSCORP lettering on the south + west faces of the upper shaft and a
+// teal lantern band round the crown. Unlit (HDR) materials: white letters by day, glowing + blooming at night (nightK).
+function buildOscorpSign(scene, gen) {
+  const R = gen.reserves.find(r => r.oscorp && r.build);
+  if (!R || typeof document === 'undefined') return;
+  const M = R.build.masses, top = Math.max(...M.map(m => m.y1));
+  const levels = [...new Set(M.map(m => m.y0))].sort((a, b) => a - b);
+  const y3 = levels[levels.length - 1];                        // base of the top tier = top of the sign tier
+  const tier = M.filter(m => Math.abs(m.y1 - y3) < 0.1);
+  if (!tier.length) return;
+  const bx0 = Math.min(...tier.map(m => m.x0)), bx1 = Math.max(...tier.map(m => m.x1));
+  const bz0 = Math.min(...tier.map(m => m.z0)), bz1 = Math.max(...tier.map(m => m.z1));
+  // lettering texture
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 192;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, c.width, c.height);
+  g.font = '900 150px "Arial Black", "Helvetica Neue", Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = 'rgba(120,235,255,0.9)'; g.shadowBlur = 18; g.fillStyle = '#ffffff';
+  g.fillText('OSCORP', c.width / 2, c.height / 2 + 6);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.FrontSide, fog: true });
+  const P = [], UV = [], I = []; let v = 0;
+  const quad = (pts) => { for (const p of pts) P.push(...p); UV.push(0, 0, 1, 0, 1, 1, 0, 1); I.push(v, v + 1, v + 2, v, v + 2, v + 3); v += 4; };
+  const h = 14, yb = y3 - 8 - h, off = 0.45;
+  { const w = Math.min(bx1 - bx0 - 6, h * 5.2), x0 = (bx0 + bx1) / 2 - w / 2, z = bz1 + off;            // south face (+z, toward Midtown)
+    quad([[x0, yb, z], [x0 + w, yb, z], [x0 + w, yb + h, z], [x0, yb + h, z]]); }
+  { const w = Math.min(bz1 - bz0 - 6, h * 5.2), z0 = (bz0 + bz1) / 2 + w / 2, x = bx0 - off;             // west face (-x, toward the park)
+    quad([[x, yb, z0], [x, yb, z0 - w], [x, yb + h, z0 - w], [x, yb + h, z0]]); }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); geo.setIndex(I);
+  geo.computeBoundingSphere();
+  const sign = new THREE.Mesh(geo, mat); sign.name = 'oscorpSign'; sign.renderOrder = 3;
+  // lantern band: a thin glowing strip wrapped round the top of the shaft, under the slanted crown
+  const lb = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 1.5, 1.7), fog: true });
+  const tt = M.filter(m => Math.abs(m.y1 - top) < 0.1);
+  const tx0 = Math.min(...tt.map(m => m.x0)) - 0.3, tx1 = Math.max(...tt.map(m => m.x1)) + 0.3, tz0 = Math.min(...tt.map(m => m.z0)) - 0.3, tz1 = Math.max(...tt.map(m => m.z1)) + 0.3;
+  const band = new THREE.Mesh(new THREE.BoxGeometry(tx1 - tx0, 1.4, tz1 - tz0), lb);
+  band.position.set((tx0 + tx1) / 2, top - 2.2, (tz0 + tz1) / 2); band.name = 'oscorpLantern';
+  const day = new THREE.Color(1.25, 1.3, 1.32), night = new THREE.Color(3.6, 4.4, 4.8), bandDay = new THREE.Color(0.35, 0.9, 1.0), bandNight = new THREE.Color(1.6, 5.0, 5.6);
+  sign.onBeforeRender = () => { const k = nightK.value ?? 0; mat.color.copy(day).lerp(night, k); lb.color.copy(bandDay).lerp(bandNight, k); };
+  scene.add(sign, band);
+  // ---- street level (user r13b): a lit OSCORP monolith on the sidewalk in front of the glass lobby (skyline.js) — collision
+  // registered so he can perch on it
+  const L = R.lot, gy = 0.15, cxL = (L.x0 + L.x1) / 2;
+  const mono = new THREE.Group(); mono.name = 'oscorpMonolith';
+  const stone = new THREE.MeshStandardMaterial({ color: 0x15191c, roughness: 0.35, metalness: 0.2 });
+  const mw = 8, mh = 2.4, md = 0.9, mz = L.z1 - (R.plazaDepth ?? 0) / 2 + (R.plazaDepth ? 0 : 5.5); // centre of the forecourt plaza
+  const body = new THREE.Mesh(new THREE.BoxGeometry(mw, mh, md), stone); body.castShadow = true; body.receiveShadow = true;
+  body.position.set(cxL, gy + mh / 2, mz); mono.add(body);
+  gen.solids.box(cxL - mw / 2, gy, mz - md / 2, cxL + mw / 2, gy + mh, mz + md / 2, 'wall');
+  const letters = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: true });
+  for (const s of [1, -1]) { // both faces
+    const pl = new THREE.Mesh(new THREE.PlaneGeometry(mw * 0.9, mw * 0.9 * 192 / 1024), letters);
+    pl.position.set(cxL, gy + mh * 0.55, mz + s * (md / 2 + 0.01)); if (s < 0) pl.rotation.y = Math.PI; mono.add(pl);
+  }
+  const mono0 = new THREE.Color(1.1, 1.15, 1.18), mono1 = new THREE.Color(3.2, 4.0, 4.4);
+  body.onBeforeRender = () => { const k = nightK.value ?? 0; letters.color.copy(mono0).lerp(mono1, k); };
+  scene.add(mono);
 }

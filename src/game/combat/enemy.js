@@ -3,10 +3,12 @@
 // bruteSlam, thugWebbedStruggle) plus Spider-Man's walk / jog / run for locomotion. Stumbles, knockdown and get-up carry
 // root motion (actor.rootDelta): the body travels with the feet, never slides or snaps back.
 // The combat module sets actor.external = true and owns position / facing / clips from then on.
-// Types: 'melee' (street thug), 'gunman' (pistol, keeps distance, fires bursts), 'brute' (big, super-armoured heavy hitter).
-// States: hold · approach · attack · aim · fire · stagger · air · knock · down · getup · webbed · stuck · out
+// Types: 'melee' (street thug), 'gunman' (pistol, keeps distance, fires bursts), 'brute' (big, super-armoured heavy hitter),
+//   'electro' (Max Dillon boss: lightning bolts, shock slam, storm strike; thug rig with a charged look).
+// States: hold · approach · attack · aim · fire · storm · stagger · air · knock · down · getup · webbed · stuck · out
 import * as THREE from 'three';
 import { makePistol, Cocoon } from './fx.js';
+import { dressElectro } from './electro.js';
 import { clamp, damp, dampAngle, angWrap, yawTo, hdist, rnd, pick, smooth, UP } from './util.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _q = new THREE.Quaternion();
@@ -17,6 +19,7 @@ export const TYPES = {
   melee: { hp: 50, speed: 3.2, reach: 1.35, dmg: 9, scale: 1, attacks: ['thugPunch1', 'thugPunch2', 'thugKick'] },
   gunman: { hp: 38, speed: 3.0, reach: 1.3, dmg: 6, scale: 1, attacks: ['thugPunch2', 'thugPunch1'] },
   brute: { hp: 150, speed: 2.4, reach: 1.7, dmg: 18, scale: 1.24, attacks: ['bruteSlam', 'thugPunch1', 'bruteSlam'] },
+  electro: { hp: 380, speed: 3.6, reach: 1.55, dmg: 14, scale: 1.1, attacks: ['bruteSlam', 'thugPunch1', 'thugKick'] },
 };
 // contact time (clip s) and telegraph (s from the start of the swing to the contact: the wind-up is slowed to fill it, so
 // the spider-sense lead matches what the body shows). The thug steps in during the wind-up.
@@ -37,11 +40,13 @@ export class Enemy {
     this.vel = new THREE.Vector3(); this.yaw = this.root.rotation.y;
     this.web = 0; this.webT = 0; this.stun = 0; this.cd = rnd(0.6, 2.0); this.flinch = 0; this.flinchDir = 0;
     this.pitch = 0; this.slot = null; this.out = false; this.stuck = null; this.lastHitT = -9; this.juggle = 0;
-    this.aimW = 0; this.hasGun = type === 'gunman'; this.shots = 0;
+    this.aimW = 0; this.hasGun = type === 'gunman'; this.hasBolt = type === 'electro'; this.shots = 0;
+    this.stormCd = type === 'electro' ? 4.5 : 99;
     const s = this.T.scale; this.root.scale.setScalar(s);
     this.bones = {}; this.root.traverse(o => { if (o.isBone) this.bones[o.name] = o; });
     this.rest = {}; for (const k of ['deltoidR', 'deltoidL', 'gluteL', 'gluteR']) if (this.bones[k]) this.rest[k] = this.bones[k].quaternion.clone();
     if (type === 'brute') this.tintBrute();
+    if (type === 'electro') this.look = dressElectro(this);
     if (this.hasGun) { this.gun = makePistol(); combat.ctx.scene.add(this.gun); }
     this.cocoon = new Cocoon(combat.ctx.scene, this.root, combat.fx.cocoonMat);
     this.rd = new THREE.Vector3(); this.loco = null;
@@ -56,7 +61,7 @@ export class Enemy {
   get targetable() { return this.alive && this.state !== 'down' && this.state !== 'getup'; }
   chest(out = new THREE.Vector3()) { return out.copy(this.pos).setY(this.pos.y + 1.25 * this.T.scale + (this.state === 'down' || this.state === 'out' ? -0.95 : 0)); }
   headPos(out = new THREE.Vector3()) { const b = this.bones.head; if (b) return b.getWorldPosition(out); return this.chest(out).setY(out.y + 0.4); }
-  set(state) { this.state = state; this.st = 0; if (['hold', 'approach', 'attack', 'aim', 'fire'].includes(state)) this.turnRate = 0; }
+  set(state) { this.state = state; this.st = 0; if (['hold', 'approach', 'attack', 'aim', 'fire', 'storm'].includes(state)) this.turnRate = 0; }
   play(name, o = {}) {
     const a = this.actor.play(name, { fade: o.fade ?? 0.18, timeScale: o.ts ?? 1, once: o.once });
     if (a) { this.act = a; this.actName = name; if (o.at != null) { a.time = o.at; this.actor.rootSync?.(); } }
@@ -68,7 +73,9 @@ export class Enemy {
     if (!this.alive) return null;
     const c = this.c;
     this.lastHitT = c.time;
-    const armored = this.type === 'brute' && this.stun <= 0 && !['throw', 'finisher', 'slam'].includes(h.kind) && this.state !== 'webbed';
+    const charging = this.type === 'electro' && (this.state === 'aim' || this.state === 'storm');
+    const armored = (this.type === 'brute' && this.stun <= 0 && !['throw', 'finisher', 'slam'].includes(h.kind) && this.state !== 'webbed')
+      || (charging && !['throw', 'finisher', 'slam'].includes(h.kind));
     if (h.stunBrute && this.type === 'brute') this.stun = 3.8;
     this.hp -= h.dmg * (armored ? 0.55 : 1);
     this.faceYaw = Math.atan2(-h.dir.x, -h.dir.z); // toward the attacker (turned to quickly, never snapped)
@@ -145,6 +152,7 @@ export class Enemy {
   addWeb(amount, dir) {
     if (!this.alive) return;
     if (this.hasGun) { this.disarm(dir); amount *= 0.5; }
+    if (this.type === 'electro') amount *= 0.38;
     this.web = Math.min(1, this.web + amount);
     if (this.type === 'brute' && this.web >= 0.6) this.stun = Math.max(this.stun, 3.2);
     // airborne / knocked enemies get pinned to the nearest wall; downed ones to the ground
@@ -156,7 +164,7 @@ export class Enemy {
     // already cocooned: more webbing tips him over and pins him to the pavement (neutralised)
     if (this.state === 'webbed' && this.st > 0.15) { this.play('thugKnockdown', { fade: 0.1, once: true, ts: 1.3 }); this.stickGround(); return; }
     if (this.web >= 0.99 && this.state !== 'air' && this.state !== 'knock') {
-      this.set('webbed'); this.webT = 7; this.play('thugWebbedStruggle', { fade: 0.18 });
+      this.set('webbed'); this.webT = this.type === 'electro' ? 2.4 : 7; this.play('thugWebbedStruggle', { fade: 0.18 });
       this.c.onEnemyInterrupted(this);
     }
   }
@@ -202,7 +210,7 @@ export class Enemy {
   // ------------------------------------------------------------------ per-frame
   update(dt) {
     const c = this.c, P = c.playerFeet;
-    this.st += dt; this.cd -= dt; this.stun -= dt;
+    this.st += dt; this.cd -= dt; this.stun -= dt; this.stormCd -= dt;
     this.flinch = Math.max(0, this.flinch - dt * 5);
     const dist = hdist(this.pos, P);
     const faceP = yawTo(this.pos, P);
@@ -223,6 +231,9 @@ export class Enemy {
         if (L > 0.15) { to.divideScalar(L); this.moveXZ(to.x * this.spd * dt, to.z * this.spd * dt); moving = this.spd; }
         this.yaw = dampAngle(this.yaw, far ? Math.atan2(to.x, to.z) : faceP, far ? 8 : 6, dt);
         this.locomote(this.spd > 0.9 || far ? this.spd : 0);
+        if (this.type === 'electro' && this.stormCd <= 0 && this.cd <= 0 && dist < 13 && dist > 2.2 && this.hp < this.maxHp * 0.62) {
+          this.startStorm();
+        }
         break;
       }
       case 'approach': { // committed melee attack: close in, start the swing ~1 m out (he steps in during the wind-up)
@@ -257,15 +268,29 @@ export class Enemy {
       case 'aim': {
         this.yaw = dampAngle(this.yaw, faceP, 10, dt);
         this.aimW = Math.min(1, this.aimW + dt / 0.22);
-        if (this.hasGun) this.play('thugGunAim', { fade: 0.22 }); else this.play('thugIdle', { fade: 0.2 });
+        if (this.hasGun) this.play('thugGunAim', { fade: 0.22 });
+        else if (this.hasBolt) this.play('thugGunAim', { fade: 0.2 });
+        else this.play('thugIdle', { fade: 0.2 });
         if (this.st >= this.aimDur) { this.set('fire'); this.shots = 0; this.nextShot = 0; }
         break;
       }
       case 'fire': {
         this.yaw = dampAngle(this.yaw, faceP, 10, dt);
         this.nextShot -= dt;
+        if (this.hasBolt) {
+          const n = this.hp < this.maxHp * 0.5 ? 2 : 1;
+          if (this.nextShot <= 0 && this.shots < n) { this.shots++; this.nextShot = 0.36; c.enemyBolt(this); this.play('thugGunFire', { fade: 0.04, once: true, ts: 1.15 }); }
+          if (this.shots >= n && this.st > 0.55) { this.set('hold'); this.play('thugIdle', { fade: 0.3 }); this.cd = rnd(1.6, 2.8); c.releaseToken(this); }
+          break;
+        }
         if (this.nextShot <= 0 && this.shots < 3) { this.shots++; this.nextShot = 0.26; c.enemyShoot(this); if (this.hasGun) this.play('thugGunFire', { fade: 0.04, once: true, ts: 1.15 }); }
         if (this.shots >= 3 && this.st > 0.85) { this.set('hold'); this.play('thugIdle', { fade: 0.3 }); this.cd = rnd(2.6, 4.2); c.releaseToken(this); }
+        break;
+      }
+      case 'storm': {
+        this.yaw = dampAngle(this.yaw, faceP, 8, dt);
+        if (!this.swung && this.st > 0.7) { this.swung = true; c.enemyStorm(this); }
+        if (this.st > 1.55) { this.set('hold'); this.play('thugIdle', { fade: 0.25 }); this.cd = rnd(1.1, 2.0); c.releaseToken(this); }
         break;
       }
       case 'yanked': {
@@ -332,6 +357,12 @@ export class Enemy {
       case 'getup': if (this.st > 1.4 / 1.1 - 0.12) { this.set('hold'); this.play('thugIdle', { fade: 0.25 }); this.cd = rnd(0.8, 1.8); } break;
       case 'webbed': {
         this.webT -= dt;
+        if (this.type === 'electro' && this.st > 1.05) {
+          this.web = 0.15; this.set('hold'); this.play('thugIdle', { fade: 0.2 });
+          this.c.fx.shock(this.chest(new THREE.Vector3()), 2.4); this.look?.flash();
+          this.c.onEnemyInterrupted(this);
+          break;
+        }
         if (this.webT <= 0) { this.web = 0.3; this.set('hold'); this.play('thugIdle', { fade: 0.3 }); }
         break;
       }
@@ -339,8 +370,12 @@ export class Enemy {
     }
     if (!['webbed', 'stuck', 'air', 'knock', 'down'].includes(this.state) && this.webT <= 0) this.web = Math.max(0, this.web - dt * 0.05);
     // ground follow when standing
-    if (['hold', 'approach', 'attack', 'aim', 'fire', 'stagger', 'getup', 'webbed', 'down', 'out'].includes(this.state)) { // (not 'yanked': it sets its own height)
-      const gy = this.ground(); this.pos.y = damp(this.pos.y, gy, 20, dt); this.pitch = damp(this.pitch, 0, 8, dt);
+    if (['hold', 'approach', 'attack', 'aim', 'fire', 'storm', 'stagger', 'getup', 'webbed', 'down', 'out'].includes(this.state)) { // (not 'yanked': it sets its own height)
+      const hover = this.type === 'electro' && this.alive && ['hold', 'aim', 'fire', 'storm'].includes(this.state)
+        ? 0.1 + Math.sin(c.time * 7) * 0.045 : 0;
+      // (user r13c) Electro levitates on his wind-ups (look.lift: spring driven by electro.js / the boss module)
+      const lift = this.type === 'electro' && this.look ? this.look.lift || 0 : 0;
+      const gy = this.ground(); this.pos.y = damp(this.pos.y, gy + hover + lift, lift > 0.05 ? 60 : 20, dt); this.pitch = damp(this.pitch, 0, 8, dt);
       const dyn = this.c.ctx.world.collideDynamic?.(this.pos, 0.34 * this.T.scale, 1.7); // parked / moving cars
       if (dyn?.push && !dyn.grounded) { this.pos.x += dyn.push.x; this.pos.z += dyn.push.z; }
     }
@@ -357,11 +392,18 @@ export class Enemy {
     this.downT = this.hp <= 0 ? 1.1 : rnd(1.3, 2.0);
     if (this.web >= 0.95 || this.knockWeb) { this.stickGround(); }
   }
+  startStorm() {
+    this.swung = false; this.loco = null;
+    this.set('storm'); this.play('bruteSlam', { fade: 0.12, once: true, ts: 0.72 });
+    this.stormCd = this.hp < this.maxHp * 0.35 ? 6.5 : 9.5;
+    this.c.threat(this, 0.7, 'bolt');
+    this.look?.flash();
+  }
   startSwing() {
     let atk = pick(this.T.attacks); if (atk === this.atk && Math.random() < 0.6) atk = pick(this.T.attacks);
     this.atk = atk; this.swung = false; this.loco = null;
     this.set('attack'); this.play(this.atk, { fade: 0.12, once: true, ts: 0.5 });
-    this.c.threat(this, TELE[this.atk] ?? 0.5, this.type === 'brute' ? 'heavy' : 'melee');
+    this.c.threat(this, TELE[this.atk] ?? 0.5, this.type === 'brute' || this.type === 'electro' ? 'heavy' : 'melee');
   }
   // ------------------------------------------------------------------ procedural layer (after the mixer)
   late(dt) {
@@ -385,6 +427,8 @@ export class Enemy {
       this.aimP = damp(this.aimP || 0, pitch, 8, dt);
       B.spine2.quaternion.multiply(_q.setFromAxisAngle(X, -this.aimP * 0.8 * smooth(this.aimW)));
     }
+    // (user r13c) Electro's channel pose: arms flung out / up while levitating (over the clip)
+    if (this.look?.applyArms) this.look.applyArms(this.look.armsW || 0);
     // helper bones follow their base bones (SPIDERMAN.md v3 contract)
     if (B.deltoidR && B.upperArmR) B.deltoidR.quaternion.slerpQuaternions(this.rest.deltoidR, B.upperArmR.quaternion, 0.5);
     this.root.updateMatrixWorld(true);
@@ -399,6 +443,7 @@ export class Enemy {
       this.gun.position.addScaledVector(up, -0.02);
     }
     this.cocoon.update(dt, this.web);
+    this.look?.update(dt);
   }
   muzzle(out = new THREE.Vector3()) {
     if (this.gun) return out.copy(this.gun.userData.muzzle).applyMatrix4(this.gun.matrixWorld);
@@ -409,6 +454,7 @@ export class Enemy {
     this.actor.play('thugIdle', { fade: 0.3 });
   }
   dispose() {
+    this.look?.dispose(); this.look = null;
     this.cocoon.dispose();
     if (this.gun) this.gun.parent?.remove(this.gun);
     this.inner.quaternion.identity(); this.inner.position.set(0, 0, 0);
