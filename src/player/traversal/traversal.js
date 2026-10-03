@@ -16,6 +16,9 @@ export const H = 0.95;               // body centre above the feet
 export const R = 0.36;               // capsule radius
 export const HEIGHT = 1.8;           // capsule height
 const STEP = 0.55;                   // max step-up (curbs, low ledges)
+// (user r19) civilian mode (Peter Parker, s.civ): a normal person's walk / jog, a small hop, a slimmer capsule (doorways)
+// and a low step-up (he walks round coffee tables and beds, not over them); no webs / wall grabs / parkour vaults
+const CIV = { walk: 1.45, run: 4.8, hop: 4.6, step: 0.3, rad: 0.27 };
 const G = 24, GS = 29;               // gravity (air / swinging) — user r13 'high octane': heavier web arcs (was GS 25)
 const WALK = 2.6, RUN = 9.8, SPRINT = 15.5;
 // user r12: holding Shift on the ground = a natural slow WALK (~1.4 m/s, ~1.85 steps/s). walkK (0..1) eases between the
@@ -42,6 +45,8 @@ const REL_NOTRICK = 5.5; // user r13: was 4.0    // release with no trick: forwa
 const REL_UP = 9;           // every swing release: upward pop (m/s; vy = max(vy + pop, 0.75 pop), capped at REL_UP_VY) —
 const REL_UP_VY = 16;       // user r10f: chained swings must climb ("give more height after each swing"); Space-release pops higher
 const SWING_DIP = 6;
+// user r14 elastic web: max stretch (fraction of the rope length, capped at 0.9 m), spring rate (1/s^2, ~2.4 Hz), radial damping (1/s)
+const WEB_STRETCH = 0.03, WEB_K = (2 * Math.PI * 2.4) ** 2, WEB_DAMP = 1.6;
 const SWING_GAIN = 5;       // climb assist target: exit this far above the attach height (m) — user r10f        // max arc dip below the attach height (m) — user r10f
 const RELEASE_BOOST = 2.5; // user r13: was 1.5 // m/s added along the release velocity when the web is let go (x skill 'swingReleaseBoost')
 const SWING_DRAG = 0.0016;  // user r13: was 0.0022 (keeps more of the dive speed through the arc)  // aerodynamic drag while swinging (1/m): a held swing with no input decays like a real pendulum
@@ -144,7 +149,7 @@ export function createTraversal({ world, cam, web, rig, camera }) {
   function setSub(sub) { if (s.sub !== sub) { s.sub = sub; s.subT = 0; } }
   const feet = new THREE.Vector3();
   const contact = { normal: new THREE.Vector3(), point: new THREE.Vector3(), box: -1, depth: 0, top: 0 };
-  function collide(stepH = STEP, rad = R) {
+  function collide(stepH = s.civ ? CIV.step : STEP, rad = s.civ ? CIV.rad : R) {
     feet.set(s.pos.x, s.pos.y - H, s.pos.z);
     const c = collider ? pushOutCapsule(collider, feet, rad, HEIGHT, stepH, contact) : pushOutRays(world, feet, rad, HEIGHT, stepH, contact);
     s.pos.x = feet.x; s.pos.z = feet.z;
@@ -186,9 +191,9 @@ export function createTraversal({ world, cam, web, rig, camera }) {
       // jump buffer: Space pressed shortly before touching down (or during a landing lock) still starts the charge
       if ((I.jumpPressed || (s.jumpBuf > 0 && I.jump)) && !s.charging) { s.charging = true; s.chargeT = 0; s.jumpBuf = 0; }
       if (s.charging) {
-        s.chargeT += h; s.jumpCharge = clamp((s.chargeT - 0.1) / 0.55, 0, 1);
+        s.chargeT += h; s.jumpCharge = s.civ ? 0 : clamp((s.chargeT - 0.1) / 0.55, 0, 1);
         // tap = short anticipation crouch (never a 1-frame pop into the air): launch once the minimum wind-up played
-        if (!I.jump && s.chargeT >= (s.speed > RUN ? 0.06 : 0.1)) { launchJump(parkour); return; }
+        if ((!I.jump || s.civ) && s.chargeT >= (s.speed > RUN ? 0.06 : 0.1)) { launchJump(parkour); return; }
       }
     }
     // --- RMB pressed on the ground (park lawns, streets): if there is anything to swing from, hop up and swing
@@ -201,7 +206,8 @@ export function createTraversal({ world, cam, web, rig, camera }) {
     // --- locomotion: facing-driven (no side slip), accel / decel curves
     let target = 0;
     if (!locked && mag > 0.08) {
-      target = mag < 0.55 ? WALK * mag / 0.55 + 0.4 : WALK + (RUN - WALK) * (mag - 0.55) / 0.45;
+      const WK = s.civ ? CIV.walk : WALK, RN = s.civ ? CIV.run : RUN; // (user r19) civilian speeds
+      target = mag < 0.55 ? WK * mag / 0.55 + 0.4 : WK + (RN - WK) * (mag - 0.55) / 0.45;
       if (wk > 1e-3) target += (WALK_SLOW * clamp(mag / 0.6, 0.45, 1) - target) * wk; // Shift walk (eased, see walkK)
       if (s.charging) target *= 1 - 0.75 * s.jumpCharge;
       const want = Math.atan2(inD.x, inD.z); const d = angWrap(want - s.facing);
@@ -241,7 +247,8 @@ export function createTraversal({ world, cam, web, rig, camera }) {
       if (into > 0.25) s.speed *= Math.max(0, 1 - into * 0.9 * Math.min(1, h * 30)); // don't run in place against walls
       if (into > 0.8 && c.top - feetY() > 2.1 && !parkour) s.speed = 0;               // walking straight into a wall: stop (idle), no walk-in-place
       const obstacle = c.top - feetY();
-      if (!locked && into > 0.55 && mag > 0.3 && walkHeld && !parkour) {
+      if (s.civ) { /* (user r19) civilian: no vaults / mantles / wall runs */ }
+      else if (!locked && into > 0.55 && mag > 0.3 && walkHeld && !parkour) {
         // Shift walk: no parkour vaults / hops at walking pace. Shift into a tall wall still starts the wall run (Shift's wall
         // behaviour), a low thick obstacle is stepped up onto gently (mantle at walk speed), anything else just stops him.
         if (obstacle >= 2.1 && s.wallCooldown <= 0) { enterWall(c.normal, c.point, true, Math.max(12, s.speed)); return; }
@@ -258,7 +265,7 @@ export function createTraversal({ world, cam, web, rig, camera }) {
     }
     // --- ground snap (C4: exact world.groundHeight, smooth curb step-ups, walk off edges)
     const fy = feetY();
-    let g = standAt(s.pos.x, s.pos.z, fy + STEP);
+    let g = standAt(s.pos.x, s.pos.z, fy + (s.civ ? CIV.step : STEP));
     if (s.dyn.t < 0.12 && s.dyn.y <= fy + STEP && s.dyn.y > g) g = s.dyn.y;
     s.balance = false; // user r9: no balance-beam / edge-hold logic on railings — they are ordinary ground
     if (g < fy - 0.65) { // walked off a ledge
@@ -292,7 +299,7 @@ export function createTraversal({ world, cam, web, rig, camera }) {
   }
   function launchJump(parkour) {
     const k = Math.pow(s.jumpCharge, 0.85);
-    s.vel.y = JUMP + (JUMP_MAX - JUMP) * k + (parkour && s.speed > 10 ? 1.2 : 0);
+    s.vel.y = s.civ ? CIV.hop : JUMP + (JUMP_MAX - JUMP) * k + (parkour && s.speed > 10 ? 1.2 : 0);
     if (s.speed > 1) { const f = Math.min(s.speed + 1.2, VMAX); s.vel.x = Math.sin(s.facing) * f; s.vel.z = Math.cos(s.facing) * f; }
     s.charging = false; s.chargeT = 0; s.grounded = false;
     const charge = s.jumpCharge;
@@ -474,7 +481,7 @@ export function createTraversal({ world, cam, web, rig, camera }) {
       const pushIn = inD.dot(c.normal) < -0.4;
       // chaining (RMB held, or just released a swing) and not deliberately steering into the wall: skip off it
       const chaining = (I.swing || s.relT < 0.7) && !pushIn && Math.hypot(s.vel.x, s.vel.z) > 9;
-      if ((into > 0.3 || pushIn) && s.wallCooldown <= 0 && c.top - feetY() > 1.2 && wideWall(c.normal, c.point) && !chaining && !(s.clock < (s.bridgeRetUntil ?? -1))) { // (bridges r2) never cling during a bridge push-back arc
+      if (!s.civ && (into > 0.3 || pushIn) && s.wallCooldown <= 0 && c.top - feetY() > 1.2 && wideWall(c.normal, c.point) && !chaining && !(s.clock < (s.bridgeRetUntil ?? -1))) { // (bridges r2) never cling during a bridge push-back arc
         // low ledge in front at chest height: mantle instead of sticking to it
         if (c.top - feetY() < 1.9 && s.vel.y > -6) { startVault(c, true); return; }
         const sp = s.vel.length(); enterWall(c.normal, c.point, (I.swing || I.sprint) && sp > 7 || sp > 18, sp); return;
@@ -725,7 +732,7 @@ export function createTraversal({ world, cam, web, rig, camera }) {
       if (S.diveK > 0.3 && s.vel.y < -26 && hf < 22) events.push({ type: 'clutchCatch', k: S.diveK, h: hf });
       else if (S.diveK > 0) events.push({ type: 'diveCatch', k: S.diveK }); }
     S.rope = s.pos.distanceTo(S.pivot); S.t = 0; S.tension = 0; S.tautT = 0; S.cornered = false; S.y0 = s.pos.y;
-    S.slack = 0; S.slackT = 0; S.kick = 0; S.kickCd = 0; S.apexed = false; S.angMax = -9;
+    S.slack = 0; S.slackT = 0; S.kick = 0; S.kickCd = 0; S.apexed = false; S.angMax = -9; S.caught = false; S.stretch = 0;
     // momentum conservation: redirect velocity along the swing tangent keeping speed (dive speed becomes swing speed)
     const rd = _v.copy(S.pivot).sub(s.pos).normalize();
     const sp = s.vel.length(), vr = s.vel.dot(rd);
@@ -850,12 +857,22 @@ export function createTraversal({ world, cam, web, rig, camera }) {
     else if (Lnow < S.rope && s.pos.y < S.pivot.y - 0.5) S.rope = Math.max(S.ropeTarget, Math.max(Lnow, S.rope - 45 * h));
     capSpeed();
     s.pos.addScaledVector(s.vel, h);
-    // rope constraint (inequality: slack allowed)
+    // rope constraint (inequality: slack allowed). user r14 'realistic web': the strand is ELASTIC — under load it stretches
+    // (spring, ~2.4 Hz with the body's mass) up to WEB_STRETCH of its length, then hard-stops; the stored stretch is given
+    // back as a recoil, so a catch dips and bounces instead of stopping dead. Radial damping is light (the swing keeps its energy).
     const d = _v3.copy(s.pos).sub(S.pivot); const L = d.length();
     let tension = 0, vrIn = 0;
+    S.stretch = 0;
     if (L > S.rope) {
-      d.divideScalar(L); s.pos.copy(S.pivot).addScaledVector(d, S.rope);
-      const vr = s.vel.dot(d); if (vr > 0) { s.vel.addScaledVector(d, -vr); vrIn = vr; }
+      d.divideScalar(L);
+      const sMax = Math.min(S.rope * WEB_STRETCH, 0.9);
+      let ex = L - S.rope;
+      if (ex >= sMax) { s.pos.copy(S.pivot).addScaledVector(d, S.rope + sMax); ex = sMax; }
+      const vr = s.vel.dot(d);
+      s.vel.addScaledVector(d, -WEB_K * ex * h);                                                // spring pull toward the anchor
+      if (ex >= sMax - 1e-4 && vr > 0) { s.vel.addScaledVector(d, -vr); vrIn = vr; }            // fully stretched: hard stop
+      else { s.vel.addScaledVector(d, -vr * (1 - Math.exp(-WEB_DAMP * h))); if (vr > 0) vrIn = vr * 0.5; } // light radial damping
+      S.stretch = ex / sMax;
       const vt2 = s.vel.lengthSq(); tension = clamp((vt2 / Math.max(S.rope, 1) + GS * Math.max(0, -d.y)) / (GS * 2.6), 0, 1);
     }
     // slack: over the top (angle > 90 deg without enough speed for v^2/r > g) the body free-falls inside the circle; the
@@ -919,6 +936,10 @@ export function createTraversal({ world, cam, web, rig, camera }) {
     else if (S.slack > 0.5) setSub('swingSlack');
     else setSub(S.phase < -0.28 ? 'swingLow' : S.phase < 0.28 ? 'swingBottom' : 'swingHigh');
     web.setSlack?.(S.slack, S.tension);
+    web.setTaut?.(0.85 * (S.stretch || 0)); // user r14: the loaded strand straightens + thins (and hums, web.js)
+    // first hard stretch of a swing (the catch) / after hanging slack: a 'web catch' beat (camera dip, thump)
+    if ((S.stretch || 0) > 0.75 && !S.caught) { S.caught = true; events.push({ type: 'webCatch', severity: clamp(s.vel.length() / 45, 0.2, 1) }); }
+    if (S.slack > 0.5) S.caught = false;
     // NO auto-release: while the button is held he keeps swinging — up past the anchor, over and around (pure rope physics)
     ropeWrap(h);
   }
@@ -1014,7 +1035,8 @@ export function createTraversal({ world, cam, web, rig, camera }) {
     events.push({ type: 'trickBoost', trick: s.trick, dv: s.vel.length() - sp0 });
   }
   function releaseSwing(kind, I) {
-    web.release();
+    // user r14: a loaded web snaps back toward its anchor when let go (elastic recoil); a loose one just falls away
+    if ((s.swing.tension || 0) > 0.3 && web.releaseSnap) web.releaseSnap(0.5); else web.release();
     // release inertia (user feedback #4b): the velocity at the instant of release — tangent to the arc, speed AND
     // direction — carries over 1:1, plus a small constant boost along that same direction. No resets / clamps / re-aim.
     const sp = s.vel.length();

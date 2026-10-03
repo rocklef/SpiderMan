@@ -418,6 +418,64 @@ function makeMaterials(animTex, meta, pedTex, bakeTex) {
   return { mat, depth, uni };
 }
 
+// (user r14d) Microsoft Rocketbox avatars (MIT; tools/crowd/rocketbox_to_crowd.py + rb_atlas.py): photo-textured,
+// properly rigged people re-skinned onto the crowd skeleton, so they play every baked clip / reaction / look-at. One
+// textured material (group 0: opaque body + head) + an alpha-tested double-sided one (group 1: lashes, hair cards).
+// ?norb: the old procedural variants only; ?oldpeds: mix them back in
+const RB_OFF = /[?&]norb/.test(typeof location !== 'undefined' ? location.search : '');
+const OLD_W = /[?&]oldpeds/.test(typeof location !== 'undefined' ? location.search : '') ? 0.35 : 0;
+async function loadRocketbox() {
+  if (RB_OFF) return null;
+  try {
+    const [meta, bin, atlas] = await Promise.all([
+      fetch('/assets/city/npc/rb_people.json').then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }),
+      fetch('/assets/city/npc/rb_people.bin').then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }),
+      new THREE.TextureLoader().loadAsync('/assets/city/npc/rb_people_atlas.webp'),
+    ]);
+    atlas.colorSpace = THREE.SRGBColorSpace; atlas.anisotropy = 4; atlas.needsUpdate = true;
+    return { meta, bin, atlas };
+  } catch (e) { console.warn('[crowd] rocketbox people unavailable', e); return null; }
+}
+function makeRbMaterials(uni, nb, atlas) {
+  const common = skinningGLSL(nb);
+  const mk = (alpha) => {
+    const m = new THREE.MeshStandardMaterial({ roughness: alpha ? 0.75 : 0.68, metalness: 0, side: alpha ? THREE.DoubleSide : THREE.FrontSide });
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, uni); sh.uniforms.uRbMap = { value: atlas };
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+        ${common}
+        attribute vec2 aUV; varying vec2 vRbUv;`)
+        .replace('#include <beginnormal_vertex>', `mat4 sk = skinMatrix();
+          vec3 objectNormal = normalize(mat3(sk) * normal); vRbUv = aUV;
+          #ifdef USE_TANGENT
+          vec3 objectTangent = vec3(1.0, 0.0, 0.0);
+          #endif`)
+        .replace('#include <begin_vertex>', 'vec3 transformed = (sk * vec4(bodyShape(position), 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+        uniform sampler2D uRbMap; varying vec2 vRbUv;`)
+        .replace('#include <map_fragment>', `{ vec4 tc = texture2D(uRbMap, vRbUv); diffuseColor *= tc;${alpha ? ' if (tc.a < 0.45) discard;' : ''} }`);
+    };
+    m.customProgramCacheKey = () => 'city-people-rb-v1' + (alpha ? 'a' : 'o');
+    return m;
+  };
+  return [mk(false), mk(true)];
+}
+// opaque triangles first, alpha-card triangles (region 21) second -> two draw groups
+function rbGeometry(bin, L) {
+  const g = buildGeometry(bin, L), reg = new Uint8Array(bin, L.reg, L.nv), src = g.index.array;
+  const out = new Uint16Array(src.length); let n = 0, nO = 0;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let t = 0; t < src.length; t += 3) {
+      if ((reg[src[t]] === 21) !== (pass === 1)) continue;
+      out[n++] = src[t]; out[n++] = src[t + 1]; out[n++] = src[t + 2];
+    }
+    if (pass === 0) nO = n;
+  }
+  g.setIndex(new THREE.BufferAttribute(out, 1));
+  g.addGroup(0, nO, 0); if (n > nO) g.addGroup(nO, n - nO, 1);
+  return g;
+}
+
 // ------------------------------------------------------------------ instanced pool per (variant, LOD)
 class PeoplePool {
   constructor(geo, mat, depth, max, shadow, name) {
@@ -688,6 +746,7 @@ export async function createCrowd({ scene, blocks, parkPaths, props, roads, phas
     new THREE.TextureLoader().loadAsync('/assets/city/tex/peds_atlas.webp').catch(() => null), // (peds r1) faces / hair / fabric
     new THREE.TextureLoader().loadAsync('/assets/city/npc/people_bake.webp').catch(() => null), // (peds r2) Cycles cloth normal + AO
   ]);
+  const rb = await loadRocketbox(); // (user r14d)
   if (bakeTex) { bakeTex.flipY = false; bakeTex.colorSpace = THREE.NoColorSpace; bakeTex.anisotropy = 4; bakeTex.needsUpdate = true; }
   const useBake = !!bakeTex && !!meta.bake && meta.variants[0]?.lods[0]?.uv !== undefined;
   const animData = new Float32Array(bin, meta.anim, meta.frames * meta.nb * 12);
@@ -698,9 +757,14 @@ export async function createCrowd({ scene, blocks, parkPaths, props, roads, phas
   const { mat, depth, uni } = makeMaterials(animTex, meta, ped, useBake ? bakeTex : null);
   const CL = {};
   for (const [k, c] of Object.entries(meta.clips)) CL[k] = c;
-  const variants = meta.variants;
+  // (user r14d) Rocketbox people appended as extra variants (own bin + textured material); the old procedural ones stay
+  // loaded (their pools just never fill) unless ?oldpeds mixes them back in
+  const rbMat = rb ? makeRbMaterials(uni, meta.nb, rb.atlas) : null;
+  const variants = rb ? meta.variants.concat(rb.meta.variants.map(v => ({ ...v, walk: v.female ? 'walkF' : 'walk' }))) : meta.variants;
+  const vWeight = (i) => { const v = variants[i]; return v.rb ? 1 : (VWEIGHT[v.name] ?? 1) * (rb ? OLD_W : 1); };
   const pools = variants.map((v, vi) => v.lods.map((L, li) => {
-    const p = new PeoplePool(buildGeometry(bin, L), mat, depth, LOD_MAX[li], li < 2, `people-${v.name}-L${li}`);
+    const p = v.rb ? new PeoplePool(rbGeometry(rb.bin, L), rbMat, depth, LOD_MAX[li], li < 2, `people-${v.name}-L${li}`)
+      : new PeoplePool(buildGeometry(bin, L), mat, depth, LOD_MAX[li], li < 2, `people-${v.name}-L${li}`);
     // (perf r2) 23 variants x 2 LODs = 46 shadow draws per cascade -> 23: LOD0 (< 24 m) casts into cascades 0-1 only,
     // LOD1 (24-70 m) into 1-2 only (cascade 0 covers < ~14 m, cascade 2 > ~50 m: only very long low-sun shadows differ)
     if (!perf2Off('nocrowdopt')) { if (li === 0) p.mesh.userData.maxCascade = 1; else if (li === 1) p.mesh.userData.minCascade = 1; }
@@ -711,11 +775,11 @@ export async function createCrowd({ scene, blocks, parkPaths, props, roads, phas
   const dogs = meta.dog ? createDogs(scene, bin, meta.dog) : null;   // (citylife r1) dog walkers
   const blobs = /[?&]noblob/.test(typeof location !== 'undefined' ? location.search : '') ? null : createBlobs(scene, animTex, meta); // (peds r2) contact shadows
   const femaleV = [], maleV = [];
-  variants.forEach((v, i) => (v.female ? femaleV : maleV).push(i));
-  const wsum = (L) => L.reduce((t, i) => t + (VWEIGHT[variants[i].name] ?? 1), 0);
+  variants.forEach((v, i) => { if (vWeight(i) > 0) (v.female ? femaleV : maleV).push(i); });
+  const wsum = (L) => L.reduce((t, i) => t + vWeight(i), 0);
   const wF = wsum(femaleV), wM = wsum(maleV);
   const HSCALE = meta.legK ? 1 / (1 - (1 - meta.legK) * 0.52) : 1; // (peds r1) shorter legs: keep the overall height
-  const pickV = (L, tot, r) => { let x = r() * tot; for (const i of L) if ((x -= VWEIGHT[variants[i].name] ?? 1) <= 0) return i; return L[L.length - 1]; };
+  const pickV = (L, tot, r) => { let x = r() * tot; for (const i of L) if ((x -= vWeight(i)) <= 0) return i; return L[L.length - 1]; };
 
   let time = 0;
   const agents = [];           // all live agents

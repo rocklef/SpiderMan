@@ -725,7 +725,7 @@ function bvHeight(L, A) {
   if (!L?.hMod || !(A.type === 'walkup' || A.type === 'loft' || A.type === 'apt')) return;
   const fh = A.floorH ?? 3.4, gH = A.gH ?? 4.5;
   if (L.hMod === 'low') { A.height = gH + fh * (L.hU < 0.5 ? 0 : 1) + 0.6; A.waterTower = false; A.fireEscape = false; A.shape = 'box'; }
-  else A.height = Math.min(A.height * (1.45 + L.hU * 0.5) + fh * 2, 110);
+  else A.height = Math.min(A.height * (1.45 + L.hU * 0.5) + fh * 2, 200); // (user r14) 110 -> 200 with the vertical scale
 }
 // (layout2 r8) low-rise massing (r7 ON HOLD #1, critic: 'a noisy homogenous mix of same-sized boxes'): neighbouring
 // low-rise lots are grouped into ENSEMBLES that share one archetype look (height, cladding, base, floor height, window
@@ -1119,7 +1119,30 @@ function streetVary(lot, A, placed) {
 // ==================== end street r12 ====================
 
 // ------------------------------------------------------------------------------------------ archetypes
+// (user r14) VERTICAL SCALE. Insomniac's Manhattan (Marvel's Spider-Man, PS4/PS5) is ~1/4 of the real area — Battery to
+// Harlem ~5 km — but keeps near-real skyscraper heights, so avenues read as deep canyons and every swing is long. Our grid
+// already matches that footprint (6.8 km island); the mid-rise fabric was the short part (Midtown median ~31 m, p90 ~87 m).
+// Heights scale per archetype; heritage low-rise districts (Village / Harlem) grow only a little; the generic towers round
+// the Empire State stay under it; landmark reserves (R.arch heights) are untouched.
+// user r14b: '2x bigger' — about double the mid-rise fabric, towers x1.6-1.75 (capped), supertalls to ~440 m
+const VSCALE = { glass: 1.6, deco: 1.75, postwar: 1.6, loft: 2.0, apt: 1.8, walkup: 1.3 };
+const VCAP = { tower: 400, slender: 440 };
 function chooseArch(lot, b, rnd) {
+  const A = chooseArch0(lot, b, rnd);
+  if (!A || !A.height) return A;
+  const dist = district(lot.cx, lot.cz);
+  let k = VSCALE[A.type] ?? 1;
+  if (dist.harlem > 0.5 || dist.village > 0.55) k = 1 + (k - 1) * 0.35;
+  const dE = Math.hypot(lot.cx - 190, lot.cz - 280);
+  if (lot.kind === 'tower' && dE < 460) k = 1 + (k - 1) * Math.max(0, (dE - 300) / 160); // ESB's own blocks stay below it
+  if (k !== 1) {
+    const g = A.gH ?? 0;
+    A.height = g + (A.height - g) * k;
+    if (lot.kind === 'tower') A.height = Math.min(A.height, A.shape === 'slender' ? VCAP.slender : VCAP.tower);
+  }
+  return A;
+}
+function chooseArch0(lot, b, rnd) {
   const w = lot.x1 - lot.x0;
   const dist = district(lot.cx, lot.cz);
   const r = rnd();

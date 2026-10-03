@@ -12,6 +12,7 @@
 //  Defeat: the screens surge back on over ~2 s ("POWER RESTORED"), slow-mo + banner from combat, the preset is restored.
 //  Leaving the area (> 120 m, combat releases the fight) or losing resets the encounter (20 s); 10 min after a win;
 //  available 45 s into a session.
+// Shortcut: open the game with ?electro -> teleports to the square and starts the fight once the game is up.
 // Debug: __cmb.electro.start() (teleports to the square and starts), .state(), .reset(), .force('surge' | 'barrage'), .power(k)
 import * as THREE from 'three';
 import { screenK } from '../../render/daynight.js';
@@ -176,9 +177,12 @@ export function createElectroBoss(c, ctx) {
     }
   }
 
+  // ?electro: straight into the boss fight (after the city / systems are up and the loading screen is gone)
+  let autoStart = typeof location !== 'undefined' && new URLSearchParams(location.search).has('electro');
   const sys = {
     update(dt) {
       const realDt = ctx.realDt ?? dt;
+      if (autoStart && S.t > 2.5 && ctx.flow?.isPlaying !== false && window.__sys) { autoStart = false; c.electro.start(); }
       S.t += realDt; S.cd = Math.max(0, S.cd - realDt);
       const pp = P.position, d = dist2D(pp);
       const available = S.state === 'idle' && S.cd <= 0;

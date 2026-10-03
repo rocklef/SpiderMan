@@ -45,6 +45,22 @@ const _tmpList = [];
 // mirror the rendered geometry, C4) or, failing that, over the coarse mass boxes (world.buildings).
 // Interface: near(x, z, r, fn(i)), shape(i) -> writes {type, x0,y0,z0,x1,y1,z1, cx,cz,rad} into a scratch, top(i,x,z), inside(p)
 export function createCollider(world) {
+  const base = cityCollider(world);
+  if (!base) return null;
+  // (user r19) interior sets (world.interior: Peter's apartment, world/interiorcol.js) live far outside the map: queries
+  // inside their footprint are answered by the set's own solids. `cur` keeps shape() / top() on the same source as the
+  // near() call that produced the index.
+  let cur = base;
+  const pick = (x, z) => { const I = world.interior; return I && I.covers(x, z) ? I : base; };
+  return {
+    get ok() { return base.ok; }, exact: base.exact,
+    near(x, z, r, fn) { cur = pick(x, z); cur.near(x, z, r, fn); },
+    shape(i) { return cur.shape(i); },
+    top(i, x, z) { return cur.top(i, x, z); },
+    inside(p) { return pick(p.x, p.z).inside(p); },
+  };
+}
+function cityCollider(world) {
   const g = world.collision;
   if (g && g.bb && g.type && typeof g.query === 'function') {
     const sh = { type: 0, x0: 0, y0: 0, z0: 0, x1: 0, y1: 0, z1: 0, cx: 0, cz: 0, rad: 0 };

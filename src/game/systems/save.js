@@ -38,6 +38,8 @@ export function createSave() {
         if (s && s.v === 1) state = { ...defaultState(), ...s, settings: { ...DEFAULT_SETTINGS, ...(s.settings || {}) }, crimes: { ...defaultState().crimes, ...(s.crimes || {}) } };
         // (user r13) one-time move of pre-ASM2 saves onto the ASM2 film look + golden hour (still changeable in Settings)
         if (s && s.v === 1 && s.settings && !('look' in s.settings)) { state.settings.look = 'asm2'; state.settings.timeOfDay = 'asm2'; }
+        // the removed 'nyc' dusk preset: saves that picked it go back to the ASM2 golden hour (unknown names fall back to plain day)
+        if (state.settings.timeOfDay === 'nyc') { state.settings.timeOfDay = 'asm2'; delete state.settings.nycDusk; }
       }
     } catch (e) { console.warn('[save] could not read save, starting fresh', e); }
   }

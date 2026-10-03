@@ -83,6 +83,9 @@ export function createChaseCamera(camera, world) {
         // swing: frame the ARC — recenter behind the swing plane direction, not the instantaneous velocity (which
         // reverses over the top / on back-swings and would whip the camera into the facade)
         wantYaw = Math.atan2(p.swingDir.x, p.swingDir.z); rate = 2.2;
+        // user r14b: a styled swing (tuck / kick / corkscrew / superman / reach) swings the camera round to a 3/4 side view
+        // so the body is seen in profile, not just the soles of his feet
+        if (p.swingStyle && p.swingStyle !== 'classic') wantYaw += 0.62 * (p.swingStyleSide || 1);
         wantPitch = clamp(0.1 - vel.y * 0.006, -0.12, 0.3);
       }
       else if (hs > 2.5 && !(p.sling > 0) && !p.noAuto) { // (web slingshot: stepping backward never swings the camera round; combat lunges: the combat camera frames the fight)
@@ -146,7 +149,7 @@ export function createChaseCamera(camera, world) {
       const wk = (p.walkK || 0) * (1 - smooth(speed, 2.2, 4.5));
       wantDist -= 0.45 * wk; wantH -= 0.1 * wk;
     }
-    else if (swinging) { wantDist = 5.8 + clamp((speed - 12) * 0.035, 0, 1.3); wantH = 0.35 + (p.tension || 0) * 0.25; wantSide = 0.15; }
+    else if (swinging) { wantDist = 5.8 + clamp((speed - 12) * 0.035, 0, 1.3) - (p.swingStyle && p.swingStyle !== 'classic' ? 0.6 : 0); wantH = 0.35 + (p.tension || 0) * 0.25; wantSide = 0.15; }
     else if (air) { wantDist = dive ? 6.4 : 6.0 + clamp((speed - 12) * 0.035, 0, 1.3); wantH = dive ? 0.9 : 0.15; wantSide = 0.2; }
     else if (m === 'wall') { wantDist = 7.0; wantH = p.sub === 'wallRun' ? 0.2 : 0; wantSide = 0; }
     else if (m === 'perch') { wantDist = 6.6; wantH = 0.25; wantSide = 0.4; }
@@ -170,6 +173,7 @@ export function createChaseCamera(camera, world) {
     // user r13: the wide speed FOV stretches the city, not Spider-Man — the boom shortens with the lens so he keeps ~his
     // screen size (65 % compensation: a little shrink still reads as speed)
     { const tf = Math.tan(THREE.MathUtils.degToRad(31)) / Math.tan(THREE.MathUtils.degToRad(Math.max(62, c.fov) / 2)); wantDist *= 1 - 0.65 * (1 - tf); }
+    wantDist *= c.distScale ?? 1; wantH += c.heightBias ?? 0; // (user r19) indoors / civilian: closer camera (set by systems)
     sd(c, 'dist', wantDist, 0.55, dt);
     sd(c, 'heightOff', wantH, 0.5, dt);
     sd(c, 'sideOff', wantSide, 0.6, dt);
@@ -205,7 +209,7 @@ export function createChaseCamera(camera, world) {
     const probe = (ox, oy) => {
       o.copy(pivot).addScaledVector(right, ox); o.y += oy;
       const h = world.raycast(o, back, c.dist + 0.4);
-      if (h) allowed = Math.min(allowed, Math.max(2.2, h.distance - 0.35));
+      if (h) allowed = Math.min(allowed, Math.max(c.minColl ?? 2.2, h.distance - 0.35)); // (user r19) indoors the lens may come close (minColl)
     };
     probe(0, 0); probe(0.3, 0); probe(-0.3, 0); probe(0, 0.25); probe(0, -0.25);
     // foliage (tree canopies have no collision): never park the camera inside leaves

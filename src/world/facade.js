@@ -1142,15 +1142,24 @@ Surf facade() {
   if (uNightK > 0.0 && vWPos.y > 7.0) {
     float nr = fract(cellR * 13.7 + cellR2 * 5.3);
     float nsw = fract(sin(floor(uDnTime / (45.0 + 60.0 * cellR2) + cellR * 17.0) * 91.7 + cellR * 311.0) * 4375.5); // rooms switch on / off every ~1-2 min
-    vec3 nt = nr > 0.86 ? vec3(0.72, 0.88, 1.2) : vec3(1.15, 0.88, 0.6);
-    // (lighting2 r3) per-floor bands (night refs): office towers have whole floors lit (cool fluorescent) or dark,
-    // homes / masonry a denser random scatter (~60 % lit)
+    // (user r14c) authentic NYC night (refs: Midtown from the Top of the Rock / Hudson Yards). Office towers light in
+    // FLOOR BANDS — a lit floor is ~90 % occupied (cleaning crews / late shifts), a dark floor shows only the odd desk
+    // lamp; each building has one colour temperature (modern LED cool white / older fluorescent warm white). Homes and
+    // masonry: a sparser warm scatter (tungsten / 2700 K LED in varied tones) with blue TV flicker in some rooms.
     float flR = fh1(vec2(fl * 3.1 + seed * 7.7, seed * 2.9 + 0.37));
+    float hB = fract(seed * 13.37);
     bool officeT = curtain || ribbon;
-    float nThr = officeT ? (flR > 0.9 ? -1.0 : (flR < 0.45 ? 0.95 : 0.62)) : (flR > 0.92 ? 0.2 : 0.6); // (lighting2 r4) critic: 70-80 % lit -> ~35-40 %
-    if (officeT && flR > 0.9) nt = mix(vec3(0.85, 0.95, 1.12), vec3(1.1, 0.95, 0.75), step(0.96, flR));
-    nt *= mix(vec3(1.0), vec3(1.12, 0.9, 0.7), step(0.6, fract(flR * 5.3))); // (lighting2 r4) colour temperature varies per floor
-    r.emis *= mix(vec3(1.0), (nr > nThr) != (nsw < 0.1) ? nt * (0.8 + 0.9 * fract(nr * 7.3)) : vec3(0.06), uNightK);
+    float sec = step(0.18, fh1(vec2(floor(cellR * 5.0) + seed * 2.3, fl + 0.5)));   // dark sections on a lit floor
+    float nThr = officeT ? (flR > 0.55 + 0.2 * hB ? 0.12 + 0.88 * (1.0 - sec) : 0.965) : (flR > 0.93 ? 0.25 : 0.6);
+    vec3 nt;
+    if (officeT) nt = hB < 0.68 ? vec3(0.8, 0.93, 1.15) : vec3(1.08, 0.94, 0.76);
+    else {
+      float wt = fract(nr * 9.1);
+      nt = wt < 0.55 ? vec3(1.18, 0.82, 0.5) : (wt < 0.85 ? vec3(1.1, 0.9, 0.66) : vec3(1.2, 0.72, 0.4));
+      float tv = step(0.88, fract(nr * 5.3 + cellR2));
+      nt = mix(nt, vec3(0.5, 0.68, 1.15) * (0.7 + 0.3 * sin(uDnTime * 7.0 + nr * 40.0) * sin(uDnTime * 3.1 + nr * 13.0)), tv);
+    }
+    r.emis *= mix(vec3(1.0), (nr > nThr) != (nsw < 0.1) ? nt * (0.75 + 0.85 * fract(nr * 7.3)) : vec3(0.035), uNightK);
   }
   if (uNightK > 0.0 && abs(vWN.y) > 0.6) r.emis *= 1.0 - uNightK; // (lighting2 r3) no 'windows' on roofs / flat tops (far-shore roofs glowed as a pale band at night)
   // (skyline r4) large-scale facade breakup on towers (not deco: those carry piers + tier cornices): a louvred

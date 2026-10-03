@@ -18,6 +18,9 @@ import { createCollectibles } from './collectibles.js';
 import { createDevMenu } from '../../ui/menus/dev.js';
 import { createCrimes } from './crimes.js';
 import { createPoliceScenes } from './policescene.js'; // (user r13b) NYPD cruisers at live crime scenes
+import { createApartment } from './apartment.js'; // (user r14d) Peter's apartment (safehouse)
+import { createCivilian } from './civilian.js'; // (user r19) Peter in civvies anywhere ([G])
+import { createMotorbike } from './motorbike.js'; // (user r19) Peter's motorbike
 import { createTravel } from './travel.js';
 import { createPhoto } from './photo.js';
 import { createSuits, SUITS } from './suits.js';
@@ -56,10 +59,18 @@ export function initSystems(ctx) {
   }
   sys.suits = createSuits(ctx);
   sys.skillfx = createSkillFx(ctx);
+  // user r19: every district unlocked from the start (each research tower counts as activated, every subway station is
+  // open for fast travel). Applied to new and existing saves; no XP is awarded for it.
+  for (const t of data.towers) if (!save.state.towers.includes(t.id)) save.state.towers.push(t.id);
+  for (const s of data.stations) if (!save.state.stations.includes(s.id)) save.state.stations.push(s.id);
+  save.markDirty();
   sys.towers = createTowers(sys);
   sys.collect = createCollectibles(sys);
   sys.crimes = createCrimes(sys);
   sys.police = createPoliceScenes(sys);
+  sys.civ = createCivilian(sys);
+  sys.apartment = createApartment(sys);
+  sys.bike = createMotorbike(sys);
   sys.travel = createTravel(sys);
   sys.photo = createPhoto(sys);
   sys.pause = createPauseMenu(sys);
@@ -119,7 +130,7 @@ export function initSystems(ctx) {
   addEventListener('blur', () => { fHeld = false; });
   function interact(dt) {
     const p = ctx.player.position;
-    const cands = [sys.towers.interact(p), sys.collect.interact(p, ctx.camera), sys.crimes.interact(p)].filter(Boolean);
+    const cands = [sys.towers.interact(p), sys.collect.interact(p, ctx.camera), sys.crimes.interact(p), sys.apartment.interact(p), sys.bike.interact(p)].filter(Boolean);
     cands.sort((a, b) => b.priority - a.priority);
     const c = cands[0];
     if (!c) { ui.prompt(null); holdT = 0; holdId = null; fPressed = false; return; }
@@ -171,6 +182,7 @@ export function initSystems(ctx) {
       else if (e.type === 'ropeAnchor') audio.sfx.thwip(0.45, 0.1);
       else if (e.type === 'ropeFail') audio.sfx.deny();
       else if (e.type === 'diveSling') audio.sfx.airRip?.(0.8 + 0.6 * e.k);   // user r13b
+      else if (e.type === 'webCatch' && e.severity > 0.45) audio.sfx.airRip?.(0.35 + 0.4 * e.severity); // user r14: hard catch whoosh
       else if (e.type === 'clutchCatch') { audio.sfx.thwip(1.4); audio.duck?.(0.35, 0.5); }
     }
     { const sl = a?.sling; tr.creakT = (tr.creakT ?? 0) - dt;
@@ -286,13 +298,16 @@ export function initSystems(ctx) {
       traversalEvents(dt);
       sys.crimes.update(dt, p);
       sys.police.update(dt);
+      sys.apartment.update(dt);
+      sys.bike.update(dt);
+      sys.civ.update(dt); // after the bike + animator: Peter copies this frame's pose
       sys.collect.update(dt, p);
       sys.travel.update(dt);
       interact(dt);
       districtTitle(dt);
       // world pins + minimap icons
       pinList.length = 0;
-      sys.towers.pins(p, pinList); sys.collect.pins(p, pinList); sys.crimes.pins(p, pinList);
+      sys.towers.pins(p, pinList); sys.collect.pins(p, pinList); sys.crimes.pins(p, pinList); sys.apartment.pins(p, pinList); sys.bike.pins(p, pinList);
       for (const s of data.stations) if (save.state.stations.includes(s.id)) { const d = Math.hypot(s.pos.x - p.x, s.pos.z - p.z); if (d < 140 && d > 6) pinList.push({ kind: 'station', pos: s.pinPos || (s.pinPos = s.pos.clone().setY(s.pos.y + 3.2)), dist: d, scale: 0.8 }); }
       // waypoint: distance under the HUD's world diamond + objective panel (waypoint > nearest research tower)
       setCombat(!!(ctx.combat?.engaged ?? window.__cmb?.state?.engaged ?? inCombat));
@@ -309,6 +324,7 @@ export function initSystems(ctx) {
       for (const b of data.backpacks) if (!save.state.backpacks.includes(b.id) && (sys.towers.revealed(b.district) || Math.hypot(b.pos.x - p.x, b.pos.z - p.z) < det)) mmList.push({ kind: 'backpack', pos: b.pos, mscale: 0.75 });
       for (const l of data.landmarks) if (!save.state.landmarks.includes(l.id) && sys.towers.revealed(l.district)) mmList.push({ kind: 'landmark', pos: l.target, mscale: 0.8 });
       if (sys.crimes.active) mmList.push({ kind: sys.crimes.active.icon, pos: sys.crimes.active.pos, clamp: true, mscale: 1.1 });
+      { const e = sys.apartment.entry; if (e && !sys.apartment.inside) mmList.push({ kind: 'home', pos: e.pos, clamp: Math.hypot(e.pos.x - p.x, e.pos.z - p.z) < 600, mscale: 0.95 }); } // (user r14d) Peter's apartment
       sys.travel.minimap(mmList);
       saveT += dt; if (saveT > 5) { saveT = 0; savePos(); }
     },

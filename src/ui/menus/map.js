@@ -10,7 +10,7 @@ const K_UP = 0.3, K_E = 0.07; // oblique extrusion: map-metres of north / east r
 const FONT = '"Spiderbench Condensed", "Barlow Condensed", "Arial Narrow", sans-serif';
 const MAPC = { water0: '#0b2552', water1: '#0a2048', street: '#07122c', road: '#1a2750', avenue: '#223263', pier: '#1e2a4c', block: '#0e1b40', park: '#123f55', tree0: 'rgba(60,150,160,.42)', tree1: 'rgba(90,180,190,.32)', bg: '#0a2048' };
 const CAT = [
-  ['tower', 'Research Towers'], ['station', 'Fast Travel'], ['backpack', 'Backpacks'], ['landmark', 'Landmarks'], ['photo', 'Secret Photos'], ['crime', 'Crimes'],
+  ['tower', 'Research Towers'], ['station', 'Fast Travel'], ['backpack', 'Backpacks'], ['landmark', 'Landmarks'], ['photo', 'Secret Photos'], ['crime', 'Crimes'], ['home', "Peter's Apartment"], // (user r14d)
 ];
 
 export function createMapPage(sys) {
@@ -182,6 +182,7 @@ export function createMapPage(sys) {
     for (const b of data.backpacks) if (revealed(b.district) || st.backpacks.includes(b.id)) { const got = st.backpacks.includes(b.id); out.push({ cat: 'backpack', kind: got ? 'done' : 'backpack', x: b.pos.x, z: b.pos.z, obj: b, title: got ? b.item : 'Backpack', cap: got ? 'Collected' : (b.mount === 'roof' ? 'Rooftop' : b.mount === 'wall' ? 'Webbed to a wall' : 'Ground level'), text: got ? b.desc : 'One of Peter\'s old backpacks, webbed up years ago.', small: got }); }
     for (const l of data.landmarks) if (revealed(l.district) || st.landmarks.includes(l.id)) { const got = st.landmarks.includes(l.id); out.push({ cat: 'landmark', kind: got ? 'done' : 'landmark', x: l.target.x, z: l.target.z, obj: l, title: l.name, cap: got ? 'Photographed' : 'Landmark', text: got ? l.desc : 'Get it in frame and press [F] (or use Photo Mode).', small: got }); }
     for (const p of data.secretPhotos) if (revealed(p.district) || st.secretPhotos.includes(p.id)) { const got = st.secretPhotos.includes(p.id); const o = p.area || (p.area = { x: p.pos.x + (Math.sin(p.pos.z) * 45), z: p.pos.z + (Math.cos(p.pos.x) * 45) }); out.push({ cat: 'photo', kind: got ? 'done' : 'photo', x: got ? p.pos.x : o.x, z: got ? p.pos.z : o.z, area: !got, obj: p, title: 'Secret Photo', cap: got ? 'Matched' : 'Somewhere around here', text: p.hint, small: got }); }
+    { const e = sys.apartment?.entry; if (e) out.push({ cat: 'home', kind: 'home', x: e.pos.x, z: e.pos.z, obj: { pos: e.pos }, title: "Peter's Apartment", cap: 'Home', text: 'Climb in through the lit window. Inside, 1-6 look around the room.', home: true }); } // (user r14d)
     const c = sys.crimes.active; if (c) out.push({ cat: 'crime', kind: c.icon, x: c.pos.x, z: c.pos.z, obj: c, title: c.title, cap: 'Crime in progress', text: c.text });
     return out.filter(i => filters[i.cat]);
   }
@@ -341,6 +342,7 @@ export function createMapPage(sys) {
       if (it.cat === 'crime') { g.beginPath(); g.arc(X, Y, s * (0.7 + (time % 1) * 0.9), 0, 6.3); g.strokeStyle = `rgba(227,38,47,${1 - (time % 1)})`; g.lineWidth = 2 * dpr; g.stroke(); }
       if (im.complete) { g.save(); g.globalAlpha = it.small ? 0.72 : 1; g.shadowColor = 'rgba(0,4,20,.8)'; g.shadowBlur = 6 * dpr; g.shadowOffsetY = 2 * dpr; g.drawImage(im, X - s / 2, Y - s / 2, s, s); g.restore(); }
       drawn.push({ it, X, Y, r: s * 0.55 });
+      if (it.cat === 'home') { g.save(); g.font = `800 ${Math.round(12 * dpr)}px ${FONT}`; g.letterSpacing = `${2 * dpr}px`; g.textAlign = 'left'; g.textBaseline = 'middle'; g.shadowColor = 'rgba(0,6,24,.95)'; g.shadowBlur = 6 * dpr; g.fillStyle = '#ff8f96'; g.fillText("PETER'S PLACE", X + s * 0.62, Y); g.restore(); } // (user r14d)
       if (it.cat === 'landmark' && view.s > 0.42) { g.save(); g.font = `800 ${Math.round(12 * dpr)}px ${FONT}`; g.letterSpacing = `${2 * dpr}px`; g.textAlign = 'left'; g.textBaseline = 'middle'; g.shadowColor = 'rgba(0,6,24,.95)'; g.shadowBlur = 6 * dpr; g.fillStyle = it.small ? 'rgba(160,220,210,.7)' : '#9ff0e2'; g.fillText((it.obj.name || it.title).toUpperCase(), X + s * 0.62, Y); g.restore(); }
     }
     g.restore();
@@ -396,7 +398,7 @@ export function createMapPage(sys) {
   function districtPct(d) { const p = districtParts(d); return p.filter(Boolean).length / p.length; }
   function updateLegend() {
     const st = save.state, cnt = (list, got) => `${list.filter(x => got.includes(x.id)).length}/${list.length}`;
-    const counts = { tower: cnt(data.towers, st.towers), station: cnt(data.stations, st.stations), backpack: cnt(data.backpacks, st.backpacks), landmark: cnt(data.landmarks, st.landmarks), photo: cnt(data.secretPhotos, st.secretPhotos), crime: String(st.crimes.stopped) };
+    const counts = { tower: cnt(data.towers, st.towers), station: cnt(data.stations, st.stations), backpack: cnt(data.backpacks, st.backpacks), landmark: cnt(data.landmarks, st.landmarks), photo: cnt(data.secretPhotos, st.secretPhotos), crime: String(st.crimes.stopped), home: '' };
     rowsEl.querySelectorAll('.row').forEach(r => { r.querySelector('span').textContent = counts[r.dataset.k]; });
     let wx, wz; if (mouse) [wx, wz] = toW(mouse.x, mouse.y); else { wx = ctx.player.position.x; wz = ctx.player.position.z; }
     const d = data.districtAt(wx, wz);
@@ -420,6 +422,7 @@ export function createMapPage(sys) {
     const acts = card.querySelector('.acts'); acts.innerHTML = '';
     const btn = (label, cls, fn) => { const b = document.createElement('button'); b.className = 'sys-btn ' + cls; b.textContent = label; b.onclick = e => { e.stopPropagation(); fn(); }; acts.appendChild(b); };
     if (it.station) btn('Fast Travel', 'red', () => { hideCard(); sys.pause.close(true); travel.fastTravel(it.station); });
+    if (it.home) btn('Go Home', 'red', () => { hideCard(); sys.pause.close(true); sys.apartment.goto(); }); // (user r14d)
     if (it.teleport) btn('Teleport Here', 'red', () => { hideCard(); sys.pause.close(true); travel.teleportTo(it.x, it.z); }); // (user r-mapteleport)
     btn('Set Waypoint', '', () => { travel.setWaypoint(new THREE.Vector3(it.x, 0, it.z)); hideCard(); dirty = true; });
     const r = el.getBoundingClientRect();

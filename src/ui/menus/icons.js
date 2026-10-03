@@ -5,6 +5,7 @@ const P = {
   landmark: '<path d="M9 28 L9 12 L16 6 L23 12 L23 28 M5 28 L27 28 M12.5 28 L12.5 21 L19.5 21 L19.5 28 M13 15 L19 15"/><path d="M16 3.5 L16 6"/>',
   camera: '<path d="M5 11 L10 11 L12 8 L20 8 L22 11 L27 11 L27 24 L5 24 Z"/><circle cx="16" cy="17" r="4.5"/><circle cx="16" cy="17" r="1.5" fill="currentColor"/>',
   photo: '<path d="M7 5 L25 5 L25 27 L7 27 Z"/><path d="M9.5 7.5 L22.5 7.5 L22.5 20.5 L9.5 20.5 Z"/><path d="M9.5 18 L14 13.5 L17 16.5 L19 14.5 L22.5 18"/>',
+  home: '<path d="M4.5 15.5 L16 5 L27.5 15.5 M8 13 L8 27 L24 27 L24 13"/><path d="M13 27 L13 19.5 L19 19.5 L19 27"/><path d="M21 6.5 L21 10"/>', // (user r14d) Peter's apartment
   station: '<rect x="8" y="5" width="16" height="18" rx="4"/><path d="M8 14 L24 14 M12 23 L9.5 28 M20 23 L22.5 28 M11 18.5 L11.1 18.5 M21 18.5 L21.1 18.5 M13 8.5 L19 8.5"/>',
   crime: '<path d="M16 4 L28.5 26 L3.5 26 Z"/><path d="M16 12 L16 19"/><circle cx="16" cy="22.5" r="1.2" fill="currentColor"/>',
   chase: '<path d="M4 20 L6 14 Q7 12 9 12 L21 12 Q23 12 24.5 14 L27 18 L28 20 L28 23 L4 23 Z"/><circle cx="9.5" cy="23.5" r="2.3"/><circle cx="22.5" cy="23.5" r="2.3"/><path d="M10 12 L12 8 L19 8 L21.5 12"/><path d="M1 15 L3.5 15 M0.5 18.5 L3 18.5"/>',
@@ -43,6 +44,7 @@ export const BADGE = {
   photo: { shape: 'circle', fill: '#a860d8', glyph: 'photo' }, station: { shape: 'square', fill: '#1f9a57', glyph: 'station' },
   stationLocked: { shape: 'square', fill: '#4b5570', glyph: 'station' }, crime: { shape: 'diamond', fill: '#e3262f', glyph: 'crime' },
   chase: { shape: 'diamond', fill: '#e3262f', glyph: 'chase' }, alarm: { shape: 'diamond', fill: '#e3262f', glyph: 'alarm' }, mugging: { shape: 'diamond', fill: '#e3262f', glyph: 'mugging' },
+  home: { shape: 'circle', fill: '#c41e2a', glyph: 'home' }, // (user r14d) Peter's apartment
   waypoint: { shape: 'none', fill: '#f5b82e', glyph: 'waypoint' }, done: { shape: 'circle', fill: '#39425c', glyph: 'check' },
 };
 export function badge(kind, size = 34) {

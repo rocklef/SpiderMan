@@ -57,6 +57,11 @@ export async function createPlayer({ scene, world, camera, input, renderer }) {
   cam.reset(s.pos, 0);
 
   let override = null, animator = null, frozen = false;
+  // (user r19) civilian mode: Peter Parker in civvies (systems/civilian.js). Webs, swinging, zips, wall runs and the
+  // slingshot are off (input stripped here, movement limits in traversal s.civ); the Spider-Man mesh stays hidden.
+  let civ = false;
+  const CIV_OFF = { swing: false, swingPressed: false, swingReleased: false, zip: false, zipPressed: false, zipReleased: false, sprint: false, sprintPressed: false,
+    sprintReleased: false, quick: false, quickPressed: false, rope: false, ropePressed: false, slingL: false, slingR: false, ctrl: false };
   let websMesh; // user r13b perf LOD (see the occlusion check in update)
 
   // ---------------------------------------------------------------- fallback animation (C1 -> GLB clips / procedural)
@@ -147,8 +152,9 @@ export async function createPlayer({ scene, world, camera, input, renderer }) {
   let lastQ = new THREE.Quaternion(), aimT = 99, zipHeld = false;
   function update(dt) {
     if (frozen) return;
-    if (input.sling) input.sling.gate = s.mode === 'ground'; // Ctrl+LMB/RMB = slingshot anchors only on the ground
+    if (input.sling) input.sling.gate = s.mode === 'ground' && !civ; // Ctrl+LMB/RMB = slingshot anchors only on the ground
     let I = input.poll(dt);
+    if (civ) I = Object.assign({}, I, CIV_OFF); // (user r19)
     aimT = I.aimT; zipHeld = I.zip;
     let combat = null;
     if (override) {
@@ -175,6 +181,7 @@ export async function createPlayer({ scene, world, camera, input, renderer }) {
       else if (e.type === 'ropeSnap') cam.shake(0.12 + 0.25 * e.severity); // slack web catching taut again
       // user r13b: dive catch -> slingshot at the bottom of the arc; clutch catch (late, low, fast) -> a short slow-mo beat
       else if (e.type === 'diveCatch') cam.shake(0.08 + 0.12 * e.k);
+      else if (e.type === 'webCatch') { cam.shake(0.05 + 0.12 * e.severity); cam.impact?.(0.04 + 0.08 * e.severity); } // user r14: the web takes his weight
       else if (e.type === 'clutchCatch') { cam.shake(0.25); cam.kick?.(0.5); try { window.__cmb?.slowmo?.(0.55, 0.32, 0.3); } catch {} }
       else if (e.type === 'diveSling') { cam.kick?.(0.6 + 0.7 * e.k); cam.shake(0.1 + 0.15 * e.k); }
       else if (e.type === 'swingWallKick') cam.shake(0.1 + 0.3 * e.severity);
@@ -189,10 +196,11 @@ export async function createPlayer({ scene, world, camera, input, renderer }) {
       swingDir: s.mode === 'swing' ? s.swing.dir : null,
       wallNormal: s.wall.normal, facing: s.facing, dive: s.dive || s.gliding, tension: s.swing.tension, bank: s.swing.bank,
       sling: s.sling.active ? 0.25 + 0.75 * s.sling.tension : 0, walkK: s.mode === 'ground' ? s.walkK || 0 : 0,
-      ropeDir: s.mode === 'rope' && s.rope ? s.rope.dir : null });
+      ropeDir: s.mode === 'rope' && s.rope ? s.rope.dir : null,
+      swingStyle: s.mode === 'swing' ? rig.animator?.swStyle?.name : null, swingStyleSide: rig.animator?.swStyle?.side || 1 }); // user r14b: style cam
     speedFx.update(dt, s.pos, s.vel, s.mode, camera);
     // character occlusion: never render the camera inside Spider-Man (hide the mesh when the lens is within ~0.8 m)
-    { const cd = camera.position.distanceTo(s.pos); rig.object.visible = cd > 0.85;
+    { const cd = camera.position.distanceTo(s.pos); rig.object.visible = cd > 0.85 && !civ;
       // user r13b perf LOD: the raised web-line mesh is sub-pixel beyond ~30 m (photo mode / far shots): skip drawing it
       const webs = websMesh ??= rig.object.getObjectByName('SpiderWebs') || false; if (webs) webs.visible = cd < 30; }
     // root transform
@@ -253,6 +261,7 @@ export async function createPlayer({ scene, world, camera, input, renderer }) {
     setControlOverride(fn) { override = typeof fn === 'function' ? fn : null; },
     setAnimator(a) { animator = a && typeof a.update === 'function' ? a : null; },
     get frozen() { return frozen; }, set frozen(b) { frozen = !!b; },
+    get civ() { return civ; }, set civ(b) { civ = !!b; s.civ = civ; }, // (user r19)
   };
   if (typeof window !== 'undefined') {
     window.__trav = trav;

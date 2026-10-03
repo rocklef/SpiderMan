@@ -6,6 +6,7 @@ import { PARK_SITES, PARK_ROCKS } from './park.js';
 import { Pool } from './pool.js';
 import { csmShared } from '../render/csm.js';
 import { trunkSkeleton, trunkMesh, TRUNK_LOD, barkMaterial, BARK } from './treetrunk.js'; // (veg r1) natural trunks + bark
+import { addWind, updateWind } from './wind.js'; // (user r14c) shared wind (trunks + leaves + crowns)
 
 // Canopy = leaf-spray cards grouped in clumps (a few per lobe), like real crowns: every clump is a small dome of cards
 // whose vertex normals blend the clump radial, the lobe radial and the card's own normal, so light wraps around each
@@ -136,6 +137,7 @@ function leafMaterial(T) {
     sh.uniforms.uTime = mat.userData.uTime;
     sh.uniforms.uLeafN = { value: LT.nrm };
     sh.uniforms.uLeafFrame = { value: csmShared.params };
+    addWind(sh);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
       attribute vec2 aLeaf; attribute vec3 aTintA; attribute vec3 aTintB; attribute float aSway;
       varying vec2 vLeaf; varying vec3 vTA; varying vec3 vTB; uniform float uTime;`)
@@ -144,9 +146,8 @@ function leafMaterial(T) {
       #ifdef USE_INSTANCING
         vec3 ip = instanceMatrix[3].xyz;
         float ph = dot(ip, vec3(0.13, 0.0, 0.17));
-        // crown sway (slow) + leaf-spray flutter (fast, outer cards only)
-        transformed.xz += vec2(sin(uTime * 1.3 + ph + position.y * 0.4), cos(uTime * 1.1 + ph)) * 0.05 * position.y * 0.12;
-        if (aLeaf.x < 1.5) transformed += vec3(sin(uTime * 4.1 + dot(position, vec3(3.1, 1.7, 2.3))), sin(uTime * 3.3 + dot(position, vec3(1.9, 2.9, 1.3))), 0.0).xzy * 0.035 * aLeaf.x;
+        // (user r14c) shared wind: gust-driven bend of the whole tree + leaf-spray flutter on the outer cards
+        transformed += windSway(position, instanceMatrix, aLeaf.x < 1.5 ? aLeaf.x : 0.0, position);
       #endif`);
     // capture the (CSM-shadowed) sun radiance + direction right after the key light is evaluated -> leaf translucency
     let lf = THREE.ShaderChunk.lights_fragment_begin;
@@ -382,12 +383,14 @@ function crownMaterial() {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uLeafN = { value: LT.nrm };
     sh.uniforms.uLeafFrame = { value: csmShared.params };
+    addWind(sh);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
       attribute vec2 aLeaf; attribute vec3 aTintA; attribute vec3 aTintB;
       varying vec2 vLeaf; varying vec3 vTA; varying vec3 vTB; varying vec3 vCW; varying vec3 vCN; varying vec3 vCI;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
       vLeaf = aLeaf; vTA = aTintA; vTB = aTintB;
       #ifdef USE_INSTANCING
+        transformed += windSway(position, instanceMatrix, 0.0, position); // (user r14c) crowns bend with the wind
         vCW = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz;
         vCN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
         vCI = instanceMatrix[3].xyz;
@@ -806,7 +809,7 @@ export function buildTrees({ scene, T, spots, parkPaths }) {
   let rr = 0;
   let sunL = null;
   out.update = (dt, cam) => {
-    t += dt; leafMat.userData.uTime.value = t;
+    t += dt; leafMat.userData.uTime.value = t; updateWind(t);
     // sun direction for the canopy shadow decals (the CSM's light 0; found once in the top-level scene)
     if (!sunL) { let top = scene; while (top.parent) top = top.parent; top.traverse(o => { if (!sunL && o.isDirectionalLight && o.castShadow) sunL = o; }); }
     if (sunL) shade.setSun(sunL);

@@ -20,6 +20,10 @@ import { ropeGrip } from '../web.js';
 import { ropePoint } from '../traversal/rope.js';
 
 const UP = new THREE.Vector3(0, 1, 0), QI = new THREE.Quaternion();
+const _qs = new THREE.Quaternion(); // user r14 swing-style spin
+const HERO_K = { clav: -0.26, back: -0.25, delt: 0.72 }; // user r14f: idle clavicle line (y, z); deltoid helper share with the arm down (0.5 at / above shoulder level)
+const S_HAND_OFF = typeof location !== 'undefined' && /[?&]nohandorient/.test(location.search);
+const _v5 = new THREE.Vector3(), _qA = new THREE.Quaternion(), _qB = new THREE.Quaternion(); // user r14f hero stance
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4();
 
@@ -290,6 +294,7 @@ export class Animator {
     // procedural post layers (character space)
     this.b.begin(out);
     this.postWeb(dt, A, tw.web);
+    this.postSwingStyle(dt, A); // user r14 swing styles + body dynamics
     this.postQuickYank(dt, A);
     this.postSecondary(dt, A, top);
     this.postLook(dt, A, tw.look * (1 - 0.8 * this.two.max)); // two-handed grip: torso stays square under the line
@@ -380,7 +385,17 @@ export class Animator {
       this._hq = [new THREE.Quaternion(), new THREE.Quaternion()];
     }
     const [qa, qb] = this._hq;
-    for (const [hi, bi] of this._help) { this.skel.rest.getQ(hi, qa); pose.getQ(bi, qb); qa.slerp(qb, 0.5); pose.setQ(hi, qa); }
+    // (user r14f) deltoid share grows as the arm comes down (0.5 -> HERO_K.delt): with the arm hanging, a 50 % helper
+    // leaves the shoulder cap standing up as a hump ('shoulders bulge'); overhead / swing poses keep the authored 50 %
+    const dk = (globalThis.__heroK || HERO_K).delt, bb = this.b.begin(pose);
+    for (const [hi, bi] of this._help) {
+      let k = 0.5;
+      if (/deltoid/i.test(this.skel.bones[hi].name)) {
+        const S = /L$/.test(this.skel.bones[hi].name) ? 'L' : 'R', dy = bb.pos('lowerArm' + S, _v).y - bb.pos('upperArm' + S, _v2).y;
+        k = lerp(0.5, dk, smooth((-dy / Math.max(1e-3, this.rd.a1) - 0.15) / 0.6));
+      }
+      this.skel.rest.getQ(hi, qa); pose.getQ(bi, qb); qa.slerp(qb, k); pose.setQ(hi, qa);
+    }
     // forearm twist helpers: half of the hand's roll about the forearm axis (swing-twist), on top of the rest rotation
     if (!this._tw) {
       this._tw = [];
@@ -408,6 +423,107 @@ export class Animator {
       b.ik('leg', S, a, knee.add(_v4.set(sx * 0.15, 0, 0.4)), 1, { absolute: false });
       b.setCQ('foot' + S, fq);
     }
+  }
+  // (user r14f) heroic standing idle (critic: 'shoulders bulge', 'stands like a piles patient' = crouched, bow-legged,
+  // hips back, shrugged): applied over the idle clip(s) with weight w. Pelvis level and over the feet, knees nearly
+  // straight with the kneecaps over the toes (pole forward, never out), feet at hip width with the toes a touch out,
+  // spine stacked and the chest lifted a little behind vertical, clavicles dropped + drawn back (the trapezius stops
+  // bunching into the deltoid), arms hanging close with a soft elbow and loose fists, chin level. The clip's own
+  // breathing / weight shift survives as a small residual (blend, not replace).
+  // (user r19) motorbike rider, posed directly (the player is frozen while riding; systems/motorbike.js calls this every
+  // frame instead of update()). R, in character space (feet-level root = the bike's ground point, +Z = forward, +X = his
+  // left): hips (pelvis joint), gripL / gripR (wrists), pegL / pegR (ankles), crouch 0..1 (sport tuck), steer (rad,
+  // + = left), look (rad, head yaw). Fingers wrap the grips; the clip sampled underneath only supplies the idle fingers
+  // / face detail.
+  riderPose(dt, R) {
+    dt = Math.min(dt, 1 / 15); this.time += dt; this.dt = dt;
+    const pose = this.P.out, C = this.clips;
+    const idle = C.first('idle'); if (!idle || !C.sample(idle, 0.5, pose)) this.fallback('idle', 0, pose);
+    const b = this.b.begin(pose), rd = this.rd;
+    b.setHipsChar(R.hips);
+    // pelvis tipped forward onto the seat, spine + chest leaning over the tank (more with the tuck)
+    const k = R.crouch ?? 0;
+    b.rot('hips', X, 0.25 + 0.15 * k);
+    b.rot('spine', X, 0.22 + 0.22 * k); b.rot('chest', X, 0.15 + 0.2 * k);
+    b.rot('chest', Y, (R.steer ?? 0) * 0.35);
+    for (const S of ['L', 'R']) {
+      const sx = S === 'L' ? 1 : -1;
+      const peg = R['peg' + S], grip = R['grip' + S];
+      // legs: knees forward and out around the tank, feet on the pegs, toes forward
+      const th = b.pos('upperLeg' + S, new THREE.Vector3());
+      b.ik('leg', S, peg, th.clone().add(_v5.set(sx * 0.32, 0.1, 0.55)), 1, { absolute: true });
+      b.fromBind('foot' + S, _qA.setFromAxisAngle(X, 0.15), 1);
+      // arms: elbows bent out and down, wrists on the grips
+      const sh = b.pos('upperArm' + S, new THREE.Vector3());
+      b.ik('arm', S, grip, sh.clone().add(_v5.set(sx * 0.45, -0.25, -0.05)), 1, { absolute: true });
+      rd.curl(pose, S, 0.85, 1);
+    }
+    // head: level gaze over the bars (the lean tips the chest down: lift the head back up), turn into the corner
+    const hq = b.cq('head', new THREE.Quaternion()), f = _v4.set(0, 0, 1).applyQuaternion(this.skel.bQ(this.b.i('head'), _qA).invert()).applyQuaternion(hq);
+    const want = _v5.set(Math.sin(R.look ?? 0), 0.05, Math.cos(R.look ?? 0)).normalize();
+    const q = _qB.setFromUnitVectors(f.normalize(), want);
+    b.setCQ('neck', b.cq('neck', new THREE.Quaternion()).premultiply(_qA.identity().slerp(q, 0.45)), 1);
+    b.setCQ('head', b.cq('head', new THREE.Quaternion()).premultiply(_qA.identity().slerp(q, 0.7)), 1);
+    this.helpers(pose);
+    { let bad = false; for (let i = 0; i < pose.q.length; i++) if (pose.q[i] !== pose.q[i]) { bad = true; break; } if (bad) pose.copy(this.P.prev); else this.P.prev.copy(pose); }
+    this.skel.apply(pose);
+    this.rig.object.updateMatrixWorld(true);
+  }
+  heroStance(pose, w) {
+    if (w < 0.01) return;
+    const b = this.b.begin(pose), rd = this.rd, T = this.time, v = _v4;
+    const breathe = Math.sin(T * TAU / 4.2), shift = noise1(T * 0.21, 31);
+    // 1. hips: tall (legs ~4 deg short of straight), centred over the feet, pelvis level
+    const hp = b.pos('hips', new THREE.Vector3());
+    const tall = rd.hipY - rd.legLen * 0.006;
+    b.moveHips((shift * 0.012 - hp.x * 0.6) * w, (tall - hp.y) * w, (0.012 - hp.z * 0.7) * w);
+    { const hq = b.cq('hips', new THREE.Quaternion()), up = v.set(0, 1, 0).applyQuaternion(this.skel.bQ(this.b.i('hips'), _qA).invert()).applyQuaternion(hq);
+      const fix = _qB.setFromUnitVectors(up.normalize(), _v5.set(0, 1, 0)); b.setCQ('hips', hq.premultiply(fix), 0.75 * w); }
+    // 2. spine stacked: hips -> neck along a line ~4 deg behind vertical, chest open
+    { const h0 = b.pos('hips', new THREE.Vector3()), nk = b.pos('neck', new THREE.Vector3()).sub(h0).normalize();
+      const want = _v5.set(0, 1, -0.07 - 0.01 * breathe).normalize(), q = _qA.setFromUnitVectors(nk, want);
+      const ang = 2 * Math.acos(Math.min(1, Math.abs(q.w))), ax = new THREE.Vector3(q.x, q.y, q.z);
+      if (ax.lengthSq() > 1e-10 && ang > 1e-4) { ax.normalize(); b.rot('spine', ax, ang * 0.55 * w); b.rot('chest', ax, ang * 0.45 * w); } }
+    b.rot('chest', X, -(0.06 + 0.012 * breathe) * w); // sternum up
+    // 3. clavicles down + back (no shrug): aim each toward a level, slightly retracted line
+    for (const S of ['L', 'R']) {
+      const sx = S === 'L' ? 1 : -1, cl = b.i('shoulder' + S); if (cl < 0) continue;
+      const K = globalThis.__heroK || HERO_K; b.aim(cl, _v5.set(sx, K.clav - 0.015 * breathe, K.back).normalize(), 0.8 * w);
+    }
+    // 4. legs: ankles under the hip sockets (+ a hair wider), knees track forward
+    for (const S of ['L', 'R']) {
+      const sx = S === 'L' ? 1 : -1, th = b.pos('upperLeg' + S, new THREE.Vector3());
+      const a = new THREE.Vector3(th.x + sx * 0.035, rd.ankleH, (S === 'L' ? 0.03 : -0.02) + shift * 0.01 * sx);
+      b.ik('leg', S, a, th.clone().add(v.set(sx * 0.02, -0.25, 0.6)), w, { absolute: true });
+      b.fromBind('foot' + S, _qA.setFromAxisAngle(Y, sx * 0.16), w); // flat, toes a little out
+    }
+    // 5. arms: close to the body, soft elbow, hands by the outer thigh, loose fists
+    for (const S of ['L', 'R']) {
+      const sx = S === 'L' ? 1 : -1, sh = b.pos('upperArm' + S, new THREE.Vector3()), L = rd.a1 + rd.a2;
+      const hand = sh.clone().add(v.set(sx * 0.075, -L * 0.93, 0.05 + 0.006 * breathe));
+      b.ik('arm', S, hand, sh.clone().add(_v5.set(sx * 0.18, -0.25, -0.35)), w, { absolute: true });
+      const fa = b.pos('lowerArm' + S, new THREE.Vector3()), wr = b.pos('hand' + S, new THREE.Vector3());
+      if (!S_HAND_OFF) b.orient('hand' + S, wr.clone().sub(fa).add(_v5.set(0, 0, 0.03)), new THREE.Vector3(-sx, 0, -0.15), new THREE.Vector3(0, -1, 0), w * 0.85); // palms (bind: down) to the thighs
+      rd.curl(pose, S, 0.42 + (S === 'L' ? 0.05 : 0), w);
+    }
+    // 5b. detail: every ~16 s he checks the right web-shooter (forearm up across the body, wrist turns, eyes on it)
+    const gc = globalThis.__heroGc ?? (T + 7) % 16, g = smooth(gc / 0.7) * (1 - smooth((gc - 2.6) / 0.7)) * w;
+    this._heroLookW = 0;
+    if (g > 0.01) {
+      const sh = b.pos('upperArmR', new THREE.Vector3()), ch = b.pos('chest', new THREE.Vector3());
+      b.ik('arm', 'R', new THREE.Vector3(ch.x + 0.02, ch.y - 0.02, ch.z + 0.3), sh.clone().add(v.set(-0.35, -0.3, 0.05)), g, { absolute: true });
+      b.twist('lowerArmR', -1.1 * g * smooth((gc - 0.9) / 0.5));
+      b.rot('handR', X, -0.35 * g);
+      rd.curl(pose, 'R', 0.75, g);
+      const wr = b.pos('handR', new THREE.Vector3()), hd = b.pos('head', new THREE.Vector3());
+      this._heroLook = wr.sub(hd).normalize(); this._heroLookW = g;
+    }
+    // 6. head: level gaze, neck long
+    { const hq = b.cq('head', new THREE.Quaternion()), f = v.set(0, 0, 1).applyQuaternion(this.skel.bQ(this.b.i('head'), _qA).invert()).applyQuaternion(hq);
+      const want = _v5.set(f.x, 0.04, f.z).normalize(); if (this._heroLookW > 0) want.lerp(this._heroLook, this._heroLookW * 0.85).normalize();
+      const q = _qB.setFromUnitVectors(f.normalize(), want);
+      b.setCQ('neck', b.cq('neck', new THREE.Quaternion()).premultiply(_qA.identity().slerp(q, 0.4)), w);
+      b.setCQ('head', b.cq('head', new THREE.Quaternion()).premultiply(_qA.identity().slerp(q, 0.6)), w); } // neck carried 0.4 of it
   }
   // Narrow-coping balance walk (anim.balance): arms out to the sides with a slow corrective sway, feet on one line.
   balance(pose, w) {
@@ -810,6 +926,81 @@ export class Animator {
     }
     if (!plan && twoOk) plan = this.twoHandPlan(a);
     if (plan) this.twoHandIK(plan);
+  }
+  // ---------------------------------------------------------------- user r14: swing styles (PS5-style variety per web)
+  // A style is picked each time a web attaches (swing node enter), weighted by speed / momentum chain, rarely the same
+  // twice. postSwingStyle layers it over the web grip (the gripping arm is never touched); body twist / centrifugal
+  // stretch apply to every style. corkscrew / superman also move the whole body via the swing node's spin().
+  //   classic   the authored hang                      reach     free arm thrown forward to the next web, legs split
+  //   tuck      knees to the chest through the dip     corkscrew a full twist about the web line, arms tight
+  //   superman  laid out flat at speed, fist forward   kick      a two-legged kick through the bottom of the arc
+  // Debug: globalThis.__swingStyle = 'corkscrew' forces a style.
+  pickSwingStyle(A) {
+    const sw = A.swing || {}, sp = sw.speed ?? 0, ch = sw.chain ?? 0, an = sw.anchor;
+    if (this.swStyle && an && this.swStyle.anchor && this.swStyle.t < 0.6 && this.swStyle.anchor.distanceTo(an) < 0.5) return; // same web (hand-layer re-entry within this swing)
+    const W = { classic: 0.3, reach: 1.2, tuck: 1.0, corkscrew: 0.9, superman: 0.6, kick: 0.9 }; // user r14b: styles most of the time
+    if (sp > 28) { W.superman += 1.5; W.corkscrew += 0.8; W.tuck *= 0.5; W.classic *= 0.6; }
+    if (sp < 15) { W.superman = 0.1; W.corkscrew = 0.4; W.classic += 0.3; }
+    if (ch >= 3) W.corkscrew += 0.7;
+    if (this.swStyle?.name) W[this.swStyle.name] *= 0.12;
+    const forced = globalThis.__swingStyle;
+    let name = forced && W[forced] !== undefined ? forced : 'classic';
+    if (!forced) { let tot = 0; for (const k in W) tot += W[k]; let r = Math.random() * tot; for (const k in W) { r -= W[k]; if (r <= 0) { name = k; break; } } }
+    this.swStyle = { name, t: 0, w: 0, side: Math.random() < 0.5 ? 1 : -1, anchor: an ? an.clone() : null };
+  }
+  postSwingStyle(dt, A) {
+    const st = this.swStyle; if (!st) return;
+    st.t += dt;
+    st.w = damp(st.w, A.mode === 'swing' ? 1 : 0, A.mode === 'swing' ? 6 : 4, dt);
+    const w = smooth(st.w) * clamp(this.webW, 0, 1); if (w < 0.01) return;
+    const b = this.b, hand = A.swing?.hand || 'R', F = hand === 'L' ? 'R' : 'L', sx = F === 'L' ? 1 : -1;
+    const ph = this.swingPh ?? 0, two = this.two?.max || 0, wf = w * (1 - two); // the two-handed grip owns the free arm
+    const sv = this._sv || (this._sv = new THREE.Vector3());
+    const V3 = (x, y, z) => sv.set(x, y, z).normalize();
+    // body dynamics, every style: the torso winds toward the web hand on the downswing and unwinds past the bottom;
+    // under heavy load (elastic web stretched) the body lengthens: spine straightens, head drops back a touch
+    const twist = -sx * 0.2 * Math.sin(clamp(ph, -1, 1) * Math.PI * 0.5) * w;
+    b.rot('spine', Y, twist * 0.45); b.rot('chest', Y, twist * 0.55);
+    const ld = clamp(A.swing?.stretch ?? 0, 0, 1) * w;
+    if (ld > 0.01) { b.rot('spine', X, -0.07 * ld); b.rot('chest', X, -0.05 * ld); b.rot('head', X, -0.08 * ld); }
+    const bump = (a, c, e) => smooth((ph - a) / (c - a)) * (1 - smooth((ph - c) / (e - c))); // 0 -> 1 -> 0 over the arc
+    switch (st.name) {
+      case 'reach': { // free arm thrown forward / up toward the next web, legs split (opposite leg forward)
+        const d = V3(sx * 0.32, 0.3 + 0.2 * Math.max(0, ph), 1).clone();
+        b.aim('upperArm' + F, d, 0.85 * wf); b.aim('lowerArm' + F, d, 0.85 * wf);
+        const Lf = F === 'L' ? 'R' : 'L';
+        b.rot('upperLeg' + Lf, X, -0.95 * w); b.rot('lowerLeg' + Lf, X, 1.1 * w);
+        b.rot('upperLeg' + F, X, 0.45 * w); b.rot('chest', Y, sx * 0.25 * w);
+        break;
+      }
+      case 'tuck': { // knees to the chest through the dip, open on the rise
+        const k = w * bump(-1.05, -0.1, 0.7);
+        if (k > 0.01) {
+          for (const S of ['L', 'R']) { b.rot('upperLeg' + S, X, -1.5 * k); b.rot('lowerLeg' + S, X, 1.9 * k); }
+          b.rot('spine', X, 0.4 * k); b.rot('chest', X, 0.2 * k); b.rot('head', X, 0.2 * k);
+          b.aim('upperArm' + F, V3(sx * 0.25, -0.45, 1).clone(), 0.6 * k * (1 - two));
+        }
+        break;
+      }
+      case 'corkscrew': { // arms in tight for the twist, legs together and pointed
+        const k = wf * (1 - smooth((st.t - 1.15) / 0.3));
+        if (k > 0.01) { b.aim('upperArm' + F, V3(sx * 0.18, -0.55, 0.55).clone(), 0.75 * k); b.aim('lowerArm' + F, V3(-sx * 0.05, 0.6, 0.8).clone(), 0.7 * k); }
+        for (const S of ['L', 'R']) b.rot('foot' + S, X, 0.3 * w);
+        break;
+      }
+      case 'superman': { // fist punched forward along the travel, legs long, toes pointed
+        const d = V3(sx * 0.12, 0.22, 1).clone();
+        b.aim('upperArm' + F, d, 0.9 * wf); b.aim('lowerArm' + F, d, 0.9 * wf);
+        this.fist(F, 1, wf);
+        for (const S of ['L', 'R']) b.rot('foot' + S, X, 0.4 * w);
+        break;
+      }
+      case 'kick': { // both legs kick forward through the bottom of the arc, then snap back down
+        const k = w * bump(-0.5, 0.05, 0.6);
+        if (k > 0.01) { for (const S of ['L', 'R']) { b.rot('upperLeg' + S, X, -1.35 * k); b.rot('lowerLeg' + S, X, 0.15 * k); b.rot('foot' + S, X, 0.45 * k); } b.rot('spine', X, -0.18 * k); b.rot('head', X, 0.15 * k); }
+        break;
+      }
+    }
   }
   // Quick web boost (Q, traversal quickBoostStart, anim.quick): ONE arm snaps out toward the far anchor while the web
   // flies (~0.05-0.11 s), then yanks the line back to the chest as the body is boosted, and springs back into the normal
@@ -2341,7 +2532,7 @@ function makeNodes(S) {
           L.data.clip = S.locoInfo.clipA ? `${S.locoInfo.clipA}>${S.locoInfo.clipB}@${S.locoInfo.w.toFixed(2)} r${S.locoInfo.rate.toFixed(2)} k${S.locoInfo.k.toFixed(2)}` : 'gait';
           if (wl < 0.999) blendPoses(S.P.idle, S.P.loco, wl, out); else out.copy(S.P.loco);
         } else { out.copy(S.P.idle); L.data.clip = idleName; }
-        if (wl < 0.999 && D.cw < 0.999) S.widenStance(out, (1 - wl) * (1 - smooth(D.cw)));
+        if (wl < 0.999 && D.cw < 0.999) S.heroStance(out, (1 - wl) * (1 - smooth(D.cw)) * (S.heroOff ? 0 : 1)); // (user r14f) was widenStance (bow-legged)
         L.data.bal = damp(L.data.bal || 0, A.balance ? 1 : 0, 6, S.dt);
         if (L.data.bal > 0.01) { S.balance(out, smooth(L.data.bal)); L.data.clip += ' +balance'; }
       },
@@ -2716,7 +2907,7 @@ function makeNodes(S) {
     swing: {
       // one layer per gripping hand (key 'swing#L'/'swing#R'): each keeps its own clock + mirror so a hand switch
       // is a clean cross-fade between two valid poses (user feedback #2)
-      enter(L, A, prev) { L.data.hand = L.key.split('#')[1] || A.swing?.hand || 'R'; L.data.ph = clamp(A.swing?.phase ?? 0, -1, 1); L.data.angPrev = null; L.data.fwd = 1; },
+      enter(L, A, prev) { L.data.hand = L.key.split('#')[1] || A.swing?.hand || 'R'; L.data.ph = clamp(A.swing?.phase ?? 0, -1, 1); L.data.angPrev = null; L.data.fwd = 1; S.pickSwingStyle(A); },
       eval(L, A, out) {
         const sw = A.swing || {};
         // phase/bank are smoothed per layer: traversal's phase can jump at attach time
@@ -2775,10 +2966,20 @@ function makeNodes(S) {
         out.copy(S.P.a);
         if (L.data.hand === 'L' && !L.data.nat) S.mirror(out);
       },
-      spin(L, A) { // body roll into the bank
+      spin(L, A) { // body roll into the bank (+ user r14 swing-style body motion: corkscrew twist / superman layout)
         const bank = clamp(A.swing?.bank ?? 0, -1, 1);
         L.data.roll = damp(L.data.roll || 0, -bank * 0.45, 5, S.dt);
-        return Math.abs(L.data.roll) > 1e-3 ? _q2.setFromAxisAngle(Z, L.data.roll) : null;
+        let q = Math.abs(L.data.roll) > 1e-3 ? _q2.setFromAxisAngle(Z, L.data.roll) : null;
+        const st = S.swStyle;
+        if (st && A.mode === 'swing') {
+          let ex = null;
+          // corkscrew: one full twist about the body's long axis (the web line) through the fast part of the arc
+          if (st.name === 'corkscrew') { const a = st.side * TAU * smoother(remap(st.t, 0.22, 1.15)); if (Math.abs(a) > 1e-3) ex = _qs.setFromAxisAngle(Y, a); }
+          // superman: laid out along the travel at speed (feet stream behind)
+          else if (st.name === 'superman') { const k = smooth(st.w) * clamp(((A.swing?.speed ?? 0) - 12) / 12, 0, 1); if (k > 1e-3) ex = _qs.setFromAxisAngle(X, 0.75 * k); }
+          if (ex) q = q ? q.multiply(ex) : _q2.copy(ex);
+        }
+        return q;
       },
     },
 

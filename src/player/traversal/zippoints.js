@@ -57,10 +57,62 @@ export function createZipPoints(world, index) {
 // Aim targeting: picks the highlighted candidate (screen-centre + distance weighted, occlusion-checked, with hysteresis).
 export function createZipTargeting(world, zipPoints) {
   const RANGE = 58;
-  let pool = [], poolT = 99, best = null, bestKey = '';
+  let pool = [], poolT = 99, best = null, bestKey = '', segs = [];
   const vis = new Map(); // key -> {t, ok}
   const shown = [];
-  const key = p => `${p.pos.x.toFixed(1)},${p.pos.y.toFixed(1)},${p.pos.z.toFixed(1)}`;
+  const posKey = p => `${p.pos.x.toFixed(1)},${p.pos.y.toFixed(1)},${p.pos.z.toFixed(1)}`;
+  const key = p => p.seg || posKey(p); // a slid ledge target keeps its segment's identity (hysteresis) while it moves
+  // user r17 (idea from ArkWeb zip.h: Arkham stores grapple LEDGES as segments, two end points + the outward normal, and
+  // the launch goes to the spot on the ledge the camera looks at): neighbouring edge points of one straight roof edge /
+  // ledge (same height and outward normal, <= 7.6 m apart, lined up along the edge) are joined into segments; each
+  // frame the target slides along a segment to the point nearest the aim ray, so a zip / perch lands where you aim
+  // instead of on the nearest 7 m-spaced point. Corners and tops (water towers, lamps, antennas) stay points.
+  const SEG_KINDS = new Set(['roofEdge', 'ledge']);
+  function buildSegments(list) {
+    const groups = new Map(), out = [];
+    for (const p of list) {
+      if (!SEG_KINDS.has(p.kind) || Math.abs(p.normal.y) > 0.2) continue;
+      const nx = Math.round(p.normal.x * 20), nz = Math.round(p.normal.z * 20);
+      // edge line id: the coordinate across the edge (along the normal) + height, both quantised
+      const across = p.pos.x * p.normal.x + p.pos.z * p.normal.z;
+      const g = `${p.kind}|${nx},${nz}|${Math.round(across * 2)}|${Math.round(p.pos.y * 4)}`;
+      let a = groups.get(g); if (!a) groups.set(g, a = []); a.push(p); p.line = g;
+    }
+    for (const a of groups.values()) {
+      if (a.length < 2) continue;
+      const tx = -a[0].normal.z, tz = a[0].normal.x; // along the edge
+      a.sort((p, q) => (p.pos.x * tx + p.pos.z * tz) - (q.pos.x * tx + q.pos.z * tz));
+      for (let i = 0; i + 1 < a.length; i++) {
+        const A = a[i].pos, B = a[i + 1].pos, d = A.distanceTo(B);
+        if (d < 1.5 || d > 7.6 || Math.abs(A.y - B.y) > 0.15) continue;
+        out.push({ a: A, b: B, n: a[i].normal, kind: a[i].kind, line: a[i].line, id: 'seg:' + posKey(a[i]) + '>' + posKey(a[i + 1]) });
+      }
+    }
+    return out;
+  }
+  // closest point of segment (a, b) to the ray (o, d unit): segment parameter t and ray distance r
+  const _su = new THREE.Vector3(), _sw = new THREE.Vector3();
+  function segRay(sg, o, d) {
+    _su.copy(sg.b).sub(sg.a); _sw.copy(sg.a).sub(o);
+    const A = _su.dot(_su), B = _su.dot(d), D = _su.dot(_sw), E = d.dot(_sw), den = A - B * B;
+    if (den < 1e-6) return null;
+    const t = THREE.MathUtils.clamp((B * E - D) / den, 0, 1);
+    const r = _su.clone().multiplyScalar(t).add(_sw).dot(d); // ray distance of that point's projection
+    return { t, r };
+  }
+  // a slid spot is only used where the ledge really is perchable: solid footing at the ledge height, nothing overhead,
+  // a real drop outward (the same rules the city applies to its points), cached on a 0.5 m grid
+  const segOK = new Map();
+  function slidValid(q, n, kind) {
+    const k = `${Math.round(q.x * 2)},${Math.round(q.y * 2)},${Math.round(q.z * 2)}`; let v = segOK.get(k); if (v !== undefined) return v;
+    const gh = world.groundHeight(q.x - n.x * 0.15, q.z - n.z * 0.15, q.y + 0.3);
+    const over = world.raycast(_v.set(q.x - n.x * 0.15, q.y + 0.15, q.z - n.z * 0.15), _v2.set(0, 1, 0), 2);
+    const out = world.groundHeight(q.x + n.x * 1.6, q.z + n.z * 1.6, q.y - 0.6);
+    const minH = kind === 'ledge' ? 8 : 6;
+    v = Math.abs(gh - q.y) < 0.3 && !over && out < q.y - 1.8 && q.y - out >= minH;
+    segOK.set(k, v); if (segOK.size > 6000) segOK.clear();
+    return v;
+  }
   let time = 0;
   // Vantage / validity per point (cached): height over the ground below it, and a real surface under the point.
   // Points with nothing under them (floating over bare street) are dropped and logged to window.__badZipPoints for
@@ -81,7 +133,7 @@ export function createZipTargeting(world, zipPoints) {
   }
   const KIND_BONUS = { roofEdge: -0.45, roofCorner: -0.5, waterTower: -0.35, ledge: 0.15, lampTop: 0.1, signalMast: 0.1, antenna: 0.05, pole: 0.2 };
   function visible(p, eye) {
-    const k = key(p), c = vis.get(k);
+    const k = posKey(p), c = vis.get(k);
     if (c && time - c.t < 0.25) return c.ok;
     const tgt = _v.copy(p.pos).addScaledVector(p.normal, 0.35); tgt.y += 0.35;
     const dir = _v2.copy(tgt).sub(eye); const len = dir.length(); dir.divideScalar(len);
@@ -98,7 +150,7 @@ export function createZipTargeting(world, zipPoints) {
       time += dt; poolT += dt;
       shown.length = 0;
       if (!enabled) { best = null; bestKey = ''; return null; }
-      if (poolT > 0.15) { poolT = 0; pool = zipPoints.query(eye, RANGE); }
+      if (poolT > 0.15) { poolT = 0; pool = zipPoints.query(eye, RANGE); segs = buildSegments(pool); }
       camera.getWorldDirection(_cf);
       const scored = [];
       for (const p of pool) {
@@ -116,6 +168,25 @@ export function createZipTargeting(world, zipPoints) {
         if (p.pos.y < eye.y - 12) score += 0.5;                 // far below: rarely the intended target
         if (p.pos.y > eye.y + 30) score += 0.35;                // very high: prefer reachable perches
         scored.push({ p, dist, ang, score, sx: _ndc.x, sy: _ndc.y });
+      }
+      // user r17: ledge segments -> the spot on each ledge nearest the crosshair (its end points are already pool points)
+      for (const sg of segs) {
+        const c = segRay(sg, camera.position, _cf); if (!c || c.r < 0 || c.t < 0.08 || c.t > 0.92) continue;
+        const q = new THREE.Vector3().lerpVectors(sg.a, sg.b, c.t);
+        const dist = q.distanceTo(eye);
+        if (dist < 3 || dist > RANGE) continue;
+        if (exclude && q.distanceToSquared(exclude) < 4) continue;
+        _ndc.copy(q).project(camera);
+        if (_ndc.z > 1 || Math.abs(_ndc.x) > 0.92 || Math.abs(_ndc.y) > 0.9) continue;
+        const dir = _v.copy(q).sub(camera.position).normalize();
+        const ang = Math.acos(THREE.MathUtils.clamp(dir.dot(_cf), -1, 1));
+        if (ang > 0.55 || !slidValid(q, sg.n, sg.kind)) continue;
+        const h = q.y - world.groundHeight(q.x + sg.n.x * 1.2, q.z + sg.n.z * 1.2, q.y - 0.6);
+        let score = ang / 0.3 + dist / RANGE * 0.9 + (KIND_BONUS[sg.kind] ?? 0) - Math.min(h, 40) / 40 * 0.35;
+        if (air) score += Math.max(0, eye.y - q.y - 3) * 0.07;
+        if (q.y < eye.y - 12) score += 0.5;
+        if (q.y > eye.y + 30) score += 0.35;
+        scored.push({ p: { pos: q, normal: sg.n, kind: sg.kind, seg: sg.id, line: sg.line }, dist, ang, score, sx: _ndc.x, sy: _ndc.y });
       }
       scored.sort((a, b) => a.score - b.score);
       let nb = null, prevEntry = null;
@@ -141,7 +212,8 @@ export function createZipTargeting(world, zipPoints) {
         if (nb) shown.push(nb);
       }
       // hysteresis: keep the current target unless the new one is clearly better
-      if (prevEntry && prevEntry.ang < 0.6 && (!nb || prevEntry.score < nb.score + 0.25)) nb = prevEntry;
+      // (user r17: never between spots of ONE ledge line — aiming along a ledge must slide the target, not stick to its end)
+      if (prevEntry && prevEntry.ang < 0.6 && (!nb || prevEntry.score < nb.score + 0.25) && !(nb && nb.p.line && nb.p.line === prevEntry.p.line)) nb = prevEntry;
       if (nb && !shown.includes(nb)) { shown.unshift(nb); if (shown.length > 3) shown.length = 3; }
       best = nb ? { pos: nb.p.pos, normal: nb.p.normal, kind: nb.p.kind, dist: nb.dist, sx: nb.sx, sy: nb.sy } : null;
       bestKey = nb ? key(nb.p) : '';

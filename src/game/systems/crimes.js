@@ -420,7 +420,7 @@ export function createCrimes(sys) {
       if (c.type === 'carChase') { c.zoneT = (c.zoneT || 0) - dt; if (c.zoneT <= 0) { c.zoneT = 0.5; emit('crime:zone', { id: c.id, pos: c.pos.clone(), radius: 15, active: true, type: c.type, moving: true }); } }
       sys.markers.setCrimeColumn(d > 30);
       if (c.state === 'active') {
-        if (d < TYPES[c.type].engage) {
+        if (d < TYPES[c.type].engage && !sys.ctx.player.civ) { // (user r19) Peter in civvies never starts a fight
           c.state = 'engaged';
           for (const th of c.thugs) { th.lookout = false; th.bully = null; th.face(p); th.play('thugIdle', { fade: 0.2 }); }
           c.enemies = c.thugs.map(a => ({ id: a.id, object: a.root, actor: a }));

@@ -13,7 +13,7 @@ const C = (r, g, b) => new THREE.Vector3(r, g, b);
 export const SUITS = [
   { id: 'advanced', name: 'Advanced Suit', level: 1, desc: 'Peter\'s own design. Lighter, tougher, and the emblem finally glows white.',
     swatch: ['#b3121b', '#16234d', '#f2f2f2'], strength: 0 },
-  { id: 'iron', name: 'Iron Spider', level: 5, desc: 'Stark nanotech armour plating in crimson and gold.',
+  { id: 'iron', name: 'Iron Spider', level: 1, // user r19: all suits unlocked from the start (was level 5) desc: 'Stark nanotech armour plating in crimson and gold.',
     swatch: ['#a01010', '#d9a52b', '#e8c05a'], strength: 1, emblem: 'iron',
     red: C(0.5, 0.02, 0.018), blue: C(0.78, 0.46, 0.1), white: C(0.95, 0.7, 0.25), black: C(0.12, 0.012, 0.01),
     rough: [0.22, 0.28, 0.22, 0.3], metal: [0.85, 1, 1, 0.7], lens: { color: 0xffffff, emissive: 0xdde8ff, intensity: 0.6 } },

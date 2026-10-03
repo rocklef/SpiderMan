@@ -280,6 +280,8 @@ export function createWebSystem(scene) {
       const ph = s * L * 0.9 - A.t * 22 + A.seed * 40;
       const wph = s * L * 0.55 - A.snapT * 38; // whip travels hand -> anchor
       p.addScaledVector(perp1, Math.sin(ph) * wave * env + Math.sin(wph) * whip * env).addScaledVector(perp2, Math.cos(ph * 0.7 + 1.3) * wave * 0.6 * env);
+      // user r14: a strand under load HUMS — a small fast standing wave (2nd + 3rd harmonics) like a taut cable
+      if (A.taut > 0.05 && A.impacted) { const hm = A.taut * Math.min(0.045, L * 0.0012); p.addScaledVector(perp1, (Math.sin(s * Math.PI * 2) * Math.sin(A.t * 71) + 0.6 * Math.sin(s * Math.PI * 3) * Math.sin(A.t * 103 + 1)) * hm); }
       if (sag > 0) p.addScaledVector(sagD, sag * env * (1 + 0.08 * Math.sin(A.t * 3.1 + s * 5)));
     }
     strands.setStrand(base, tmp, 1 - 0.3 * A.taut); // stretched strand thins under load

@@ -6,7 +6,7 @@
 // world exposes no box list.
 import * as THREE from 'three';
 
-const _rel = new THREE.Vector3(), _d = new THREE.Vector3(), _A = new THREE.Vector3();
+const _rel = new THREE.Vector3(), _d = new THREE.Vector3(), _A = new THREE.Vector3(), _C = new THREE.Vector3();
 const near = [];
 
 export function createAnchorFinder(world, index, zipPoints) {
@@ -44,6 +44,42 @@ export function createAnchorFinder(world, index, zipPoints) {
         }
         cands.push({ point: _A.clone(), normal: new THREE.Vector3(ax === 0 ? sgn : 0, 0, ax === 2 ? sgn : 0), L, score, lat, kind: 'wall' });
       }
+      // user r17 corner anchors (idea from ArkWeb hints.h: Insomniac's swing volumes carry a CORNER feature flag): while
+      // steering into a turn, the building corner on the INSIDE of the turn, ahead (the block corner at the intersection),
+      // is a preferred anchor. The web goes on the face that looks at him, 0.4 m from the corner edge, so the pendulum
+      // pivots round the corner and whips him into the new street.
+      if (opt.turn && opt.fwd0) {
+        const f0 = opt.fwd0, r0x = -f0.z, r0z = f0.x;
+        const ts = Math.sign(opt.turn.x * r0x + opt.turn.z * r0z); // +1 turning right, -1 left
+        if (ts) {
+          const cx0 = (b.min[0] + b.max[0]) / 2, cz0 = (b.min[2] + b.max[2]) / 2;
+          for (let k = 0; k < 4; k++) {
+            const kx = k & 1 ? b.max[0] : b.min[0], kz = k & 2 ? b.max[2] : b.min[2];
+            let ox = kx - cx0, oz = kz - cz0; const ol = Math.hypot(ox, oz) || 1; ox /= ol; oz /= ol; // outward diagonal
+            if (ox * f0.x + oz * f0.z < 0.2) continue;                 // corner points ahead (toward the cross street)
+            if ((ox * r0x + oz * r0z) * ts > -0.2) continue;          // ...and back toward his side: the inside of the turn
+            const rx = kx - pos.x, rz = kz - pos.z;
+            const ahead = rx * f0.x + rz * f0.z, side = (rx * r0x + rz * r0z) * ts;
+            if (ahead < 4 || ahead > 40 || side < 2 || side > 26) continue;
+            const fxN = Math.sign(kx - cx0), fzN = Math.sign(kz - cz0); // outward normals of the two faces meeting here
+            const sx = (pos.x - kx) * fxN, sz = (pos.z - kz) * fzN;       // how squarely each face looks at him
+            if (Math.max(sx, sz) < 2) continue;
+            const onX = sx >= sz;
+            // a REAL outside corner at this height: just past the corner (3 m on along the travel, 1 m inside the face
+            // line) nothing reaches up to the anchor (the cross street / a setback). Box seams mid-block, where the next
+            // part of the street wall carries on, are not corners.
+            const px = kx + f0.x * 3 - (onX ? fxN : 0), pz = kz + f0.z * 3 - (onX ? 0 : fzN);
+            if (world.groundHeight(px, pz) > ay - 2) continue;
+            if (onX) _C.set(kx, ay, kz - fzN * 0.4); else _C.set(kx - fxN * 0.4, ay, kz);
+            _rel.copy(_C).sub(pos);
+            const L = _rel.length(); if (L < opt.minL || L > opt.maxL) continue;
+            const elev = Math.atan2(_rel.y, Math.hypot(_rel.x, _rel.z));
+            let score = _C.distanceTo(D) / 10 + Math.max(0, _C.y - D.y) * 0.08 - 1.2;
+            score += Math.max(0, opt.elevLo - elev) * 4 + Math.max(0, elev - opt.elevHi) * 3;
+            cands.push({ point: _C.clone(), normal: new THREE.Vector3(onX ? fxN : 0, 0, onX ? 0 : fzN), L, score, lat: _rel.x * right.x + _rel.z * right.z, kind: 'wall', corner: true });
+          }
+        }
+      }
     }
     cands.sort((a, b) => a.score - b.score);
     return cands;
@@ -58,7 +94,7 @@ export function createAnchorFinder(world, index, zipPoints) {
       if (Math.abs(h.normal.y) > 0.5 || h.distance < len * 0.6 || h.point.y < pos.y + 4) return null;
       return { point: h.point.clone(), normal: h.normal.clone(), L: h.distance, lat: c.lat, kind: 'wall' };
     }
-    return { point: h.point.clone(), normal: h.normal.clone(), L: h.distance, lat: c.lat, kind: c.kind };
+    return { point: h.point.clone(), normal: h.normal.clone(), L: h.distance, lat: c.lat, kind: c.kind, corner: !!c.corner };
   }
   // cheap arc check: body path from pos down to the arc bottom must be clear
   function arcClear(pos, pivotY, pivot, rope) {
@@ -134,7 +170,7 @@ export function createAnchorFinder(world, index, zipPoints) {
       if (high) for (const P of passes) { P.minAbove = 1.5; P.elevLo = 0.12; }
       for (const P of passes) {
         const D = new THREE.Vector3(pos.x + want.x * P.ahead, Math.max(pos.y + P.minAbove + 1, Math.min(pos.y + P.up, band)), pos.z + want.z * P.ahead);
-        P.turn = turn;
+        P.turn = turn; P.fwd0 = fwd;
         const list = faceCandidates(pos, D, want, right, P);
         let tries = 0;
         for (const c of list) {

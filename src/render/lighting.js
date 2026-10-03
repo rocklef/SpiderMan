@@ -96,6 +96,11 @@ export const PRESETS = {
 // (user r13) ASM2 golden hour: the film's sunlit swing scenes — low warm sun raking down the avenues, glowing haze,
 // long shadows, still bright enough to play in (a gameplay-friendly sunset)
 PRESETS.asm2 = { elevation: 13, azimuth: 150, look: { vertFill: 0.66, vertBounce: 0.36, warm: 0.72, env: 0.66, envSat: 0.85, sun: 1.5, exposure: 1.05, clouds: 0.48, fog: 1.15, mie: 0.95, bounce: 0.34, groundBounce: 1.2, glow: 1.25, fogTint: [1.0, 0.88, 0.76] } };
+// (user r16) winter morning, ~8:30 a.m. late December (solarPosition with decl -21 deg: el ~12, grid az ~14): a low
+// sun raking cold-white light down the cross streets from the ESE, long crisp shadows, a pale icy-blue sky with thin
+// high cloud and milky haze, cold mist settled low in the canyons and over the rivers (far towers fade to blue-grey), blue-tinted
+// shade, muted colour. Lighting / air only (no snow).
+PRESETS.winter = { elevation: 12, azimuth: 14, look: { vertFill: 0.62, vertBounce: 0.28, warm: -0.7, env: 1.2, envSpec: 1.0, envSat: 0.36, sun: 1.45, exposure: 1.08, clouds: 0.38, overcast: 0.8, fog: 4.6, mie: 2.6, bounce: 0.22, groundBounce: 0.8, glow: 0.45, fogTint: [0.87, 0.91, 0.97] } }; // overcast 0.8 here = thin milky winter haze over the blue (not the storm deck: no rain / wet)
 PRESETS.dayB = { elevation: 55, azimuth: 58, look: { ...PRESETS.day.look } };
 PRESETS.dayC = { elevation: 44, azimuth: 160, look: { ...PRESETS.day.look } };
 export const DAY_SUNS = { a: 'day', b: 'dayB', c: 'dayC' };

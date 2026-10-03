@@ -51,6 +51,7 @@ export function initCombat(ctx) {
 
   c.sfx = (k, a) => { try { const s = sys?.audio?.sfx; if (!s) return; if (k === 'land') s.land(a); else if (k === 'whoosh') s.whoosh(a); else if (k === 'thwip') s.thwip(a); else if (k === 'deny') s.deny?.(); else s[k]?.(a); } catch (e) { /* audio optional */ } }; // (audio r1) + hit / hurt / shot / slam
   c.shake = a => P.cam?.shake?.(a);
+  c.impact = k => P.cam?.impact?.(k); // (user r18)
   c.playerChest = out => out.copy(P.position).setY(P.position.y + 0.45);
 
   // ------------------------------------------------------------------ time scale (hit-stop / slow-mo), real-time based
@@ -142,17 +143,22 @@ export function initCombat(ctx) {
     const r = e.hit({ dmg: h.dmg, dir: dir.clone(), kind: h.kind, stunBrute: h.stunBrute, side: h.side || 0 });
     if (!r) return;
     const heavy = r.armored ? 0.1 : h.heavy || 0;
+    // (user r18) heavier impacts on combo enders / launchers / finishers (not on armoured blocks): a bigger burst, dust
+    // at his feet, ~40 % longer hit-pause, stronger shake + camera punch. Light hits keep their snappy feel.
+    const big = !r.armored && (h.kind === 'ender' || h.kind === 'launch' || h.kind === 'finisher');
+    const hv = big ? Math.max(heavy, h.kind === 'finisher' ? 1 : 0.6) : heavy;
     const cp = e.chest(_v2).addScaledVector(dir, -0.28); if (h.kind === 'air' || h.kind === 'slam' || e.state === 'air') cp.y = e.pos.y + 1.0;
     if (!h.silent) {
-      c.fx.hit(cp, _v3.copy(dir).negate(), { heavy, color: r.armored ? [3, 3, 3.4] : e.type === 'electro' ? [1.5, 4.6, 9] : undefined });
+      c.fx.hit(cp, _v3.copy(dir).negate(), { heavy: hv, color: r.armored ? [3, 3, 3.4] : e.type === 'electro' ? [1.5, 4.6, 9] : undefined });
+      if (big) { c.fx.blast(cp, dir, h.kind === 'finisher' ? 1.35 : 1); c.fx.dust(e.pos, { amount: h.kind === 'finisher' ? 1.1 : 0.8 }); }
       // impact: light hits dip time for 2 frames (0.15x, not a freeze), heavy ones hold ~4 frames; a full stop on every
       // jab read as stutter
-      if (h.kind === 'finisher') c.hitStop(0.12, 0.05); else if (heavy > 0.5) c.hitStop(0.065, 0.08); else c.hitStop(0.035, 0.15);
-      c.shake(0.05 + heavy * 0.25);
-      if (heavy > 0.5) P.cam?.impact?.(0.12 + heavy * 0.15);
-      c.sfx('hit', heavy);
+      if (h.kind === 'finisher') c.hitStop(0.17, 0.05); else if (big) c.hitStop(0.09, 0.06); else if (heavy > 0.5) c.hitStop(0.065, 0.08); else c.hitStop(0.035, 0.15);
+      c.shake(big ? 0.14 + hv * 0.36 : 0.05 + heavy * 0.25);
+      if (big) P.cam?.impact?.(0.22 + hv * 0.22); else if (heavy > 0.5) P.cam?.impact?.(0.12 + heavy * 0.15);
+      c.sfx('hit', hv);
       if (!r.armored) { c.combo.n++; c.combo.t = 0; }
-      if (heavy > 0.5) { c.camPunchT = 0; c.camPunchDir = dir.clone(); c.fx.smear(cp, dir, heavy); }
+      if (heavy > 0.5 || big) { c.camPunchT = 0; c.camPunchDir = dir.clone(); c.camPunchK = big ? 1.6 : 1; c.fx.smear(cp, dir, hv); }
       const mult = 1 + Math.min(1, c.combo.n / 15);
       me.focus = Math.min(3, me.focus + (heavy > 0.5 ? 0.14 : 0.075) * mult);
     }
@@ -496,7 +502,7 @@ export function initCombat(ctx) {
         wantP.addScaledVector(_cr, c.camSide * 1.0 * c.camAir * w);
       }
       // heavy hit: short push-in toward the impact
-      if (c.camPunch > 0) wantP.addScaledVector(fwd, 0.25 * c.camPunch * w);
+      if (c.camPunch > 0) wantP.addScaledVector(fwd, 0.25 * (c.camPunchK || 1) * c.camPunch * w); // (user r18) big hits punch in harder
       // sideways toward the crowd (world-space offset, spring-smoothed, lateral only)
       const off = n ? _v.set(cen.x / n - pc.x, 0, cen.z / n - pc.z).multiplyScalar(0.22) : _v.set(0, 0, 0);
       if (off.length() > 1.6) off.setLength(1.6);

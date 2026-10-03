@@ -21,7 +21,8 @@
 //                 the lip -> +1.95 m up, +0.70/+0.62 m inward) | vault (legacy)
 //   t: seconds in the current sub-state, modeT: seconds in the current mode,
 //   speed (m/s), velocity: Vector3, grounded, jumpCharge 0..1,
-//   swing: {phase -1..1 (back..front), bank -1..1, tension 0..1, anchor: Vector3, hand: 'L'|'R', ropeLength},
+//   swing: {phase -1..1 (back..front), bank -1..1, tension 0..1, anchor: Vector3, hand: 'L'|'R', ropeLength,
+//           stretch 0..1 (elastic web load, user r14), speed (m/s), chain (swing momentum chain count)},
 //   zip.pitch: flight elevation (rad, +up) = asin(v.y/|v|) -> blend zipFlight (object up along velocity) <-> zipFlightLevel;
 //   zip.dir: unit flight direction.
 //   perch.point: EXACT perch top-surface point (feet contact, world) — IK the balls of the feet / hands onto it;
@@ -65,7 +66,7 @@ const UPV = new THREE.Vector3(0, 1, 0), XV = new THREE.Vector3(1, 0, 0);
 export function makeAnim() {
   return {
     mode: 'ground', sub: 'idle', t: 0, modeT: 0, speed: 0, velocity: new THREE.Vector3(), grounded: true, jumpCharge: 0,
-    swing: { phase: 0, bank: 0, tension: 0, anchor: new THREE.Vector3(), hand: 'R', ropeLength: 0, angle: 0, slack: 0, kick: 0 },
+    swing: { phase: 0, bank: 0, tension: 0, anchor: new THREE.Vector3(), hand: 'R', ropeLength: 0, angle: 0, slack: 0, kick: 0, stretch: 0, speed: 0, chain: 0 },
     zip: { target: new THREE.Vector3(), t: 0, dash: false, phase: '', webs: false, taut: 0, anchorL: new THREE.Vector3(), anchorR: new THREE.Vector3(), launchDir: new THREE.Vector3(), pitch: 0, dir: new THREE.Vector3(0, 0, 1) },
     perch: { normal: new THREE.Vector3(0, 0, 1), kind: 'roofEdge', point: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), edge: new THREE.Vector3(1, 0, 0), radius: 0, impact: new THREE.Vector3() },
     wall: { normal: new THREE.Vector3(0, 0, 1), move: new THREE.Vector2(), fast: false, phase: 0, dist: 0.38, point: new THREE.Vector3(), runK: 0 },
@@ -90,6 +91,7 @@ export function writeAnim(a, s, q) {
   const S = s.swing;
   a.swing.phase = S.phase; a.swing.bank = S.bank; a.swing.tension = s.mode === 'swing' ? S.tension : 0; a.swing.anchor.copy(S.anchor); a.swing.hand = S.hand; a.swing.ropeLength = S.rope; a.swing.angle = s.mode === 'swing' ? S.angle || 0 : 0;
   a.swing.slack = s.mode === 'swing' ? S.slack || 0 : 0; a.swing.kick = s.mode === 'swing' ? S.kick || 0 : 0;
+  a.swing.stretch = s.mode === 'swing' ? S.stretch || 0 : 0; a.swing.speed = s.vel.length(); a.swing.chain = s.chain || 0; // user r14
   a.zip.target.copy(s.zip.target); a.zip.t = s.mode === 'zip' ? s.zip.t : 0; a.zip.dash = !!s.zip.dash && s.sub === 'zipPull' && s.mode === 'air';
   { const Z = s.zip, zm = s.mode === 'zip';
     a.zip.phase = zm ? ({ zipFire: 'fire', zipYank: 'yank', zipFlight: 'flight', zipCatch: 'catch' }[s.sub] || '') : '';

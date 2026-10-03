@@ -233,6 +233,78 @@ export function makePistol() {
 }
 
 // ------------------------------------------------------------------ main fx object
+// (user r18) heavier impacts: a cracked-plaster crater (crushed core, jagged radial cracks with branches, chipped
+// light flecks along them) for enemies smashed into walls. RGBA: dark cracks on transparent.
+function crackTex() {
+  return canvasTex(512, (g, S) => {
+    const C = S / 2, R = () => Math.random();
+    const core = g.createRadialGradient(C, C, 0, C, C, S * 0.16);
+    core.addColorStop(0, 'rgba(18,16,14,0.78)'); core.addColorStop(0.55, 'rgba(26,23,20,0.45)'); core.addColorStop(1, 'rgba(30,27,24,0)');
+    g.fillStyle = core; g.fillRect(0, 0, S, S);
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    const crack = (x, y, ang, len, w, depth) => {
+      g.beginPath(); g.moveTo(x, y);
+      const pts = [[x, y]];
+      let a = ang;
+      for (let d = 0; d < len; d += 9 + R() * 10) { a += (R() - 0.5) * 0.7; x += Math.cos(a) * 12; y += Math.sin(a) * 12; g.lineTo(x, y); pts.push([x, y]); }
+      g.strokeStyle = 'rgba(14,12,10,' + (0.9 - depth * 0.2) + ')'; g.lineWidth = w; g.stroke();
+      if (depth < 2) for (let k = 2; k < pts.length - 2; k += 3) if (R() < 0.55) crack(pts[k][0], pts[k][1], a + (R() < 0.5 ? -1 : 1) * (0.5 + R() * 0.7), len * (0.25 + R() * 0.3), w * 0.55, depth + 1);
+      g.fillStyle = 'rgba(165,158,148,0.5)'; // chipped flecks beside the crack
+      for (const [px, py] of pts) if (R() < 0.35) g.fillRect(px + (R() - 0.5) * 8, py + (R() - 0.5) * 8, 2 + R() * 3, 2 + R() * 3);
+    };
+    const n = 9 + Math.floor(R() * 4);
+    for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2 + R() * 0.5; crack(C + Math.cos(a) * 10, C + Math.sin(a) * 10, a, S * (0.2 + R() * 0.24), 3.2 + R() * 2.2, 0); }
+  }, { srgb: true });
+}
+// (user r18) debris chips: lit (not glowing) instanced chunks of concrete / brick / stone that fly off an impact, spin,
+// bounce once on the ground under them and shrink away. Fixed pool, one draw call.
+const CHIP_COL = [[0.2, 0.19, 0.18], [0.14, 0.135, 0.13], [0.19, 0.11, 0.085], [0.27, 0.24, 0.2], [0.23, 0.225, 0.22]];
+class Debris {
+  constructor(scene, max = 160) {
+    this.max = max; this.list = [];
+    const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.96, metalness: 0, envMapIntensity: 0.6 }); m.name = 'cmb-debris';
+    this.mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), m, max);
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3), 3);
+    this.mesh.count = 0; this.mesh.frustumCulled = false; this.mesh.name = 'cmb-debris';
+    scene.add(this.mesh);
+    this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._c = new THREE.Color();
+  }
+  emit(pos, vel, size, floorY) {
+    if (this.list.length >= this.max) this.list.shift();
+    const col = CHIP_COL[Math.floor(Math.random() * CHIP_COL.length)], k = 0.85 + Math.random() * 0.3;
+    this.list.push({ pos: pos.clone(), vel: vel.clone(), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(0, 6.3), rnd(0, 6.3), rnd(0, 6.3))),
+      axis: new THREE.Vector3(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).normalize(), spin: rnd(6, 16),
+      dim: new THREE.Vector3(size * rnd(0.5, 1.3), size * rnd(0.25, 0.6), size * rnd(0.5, 1.2)), col: col.map(c => c * k), // flat shards, not cubes
+      floorY, age: 0, life: rnd(1.6, 2.6), bounced: false });
+  }
+  update(dt) {
+    const L = this.list; let n = 0;
+    for (let i = 0; i < L.length; i++) {
+      const d = L[i]; d.age += dt; if (d.age >= d.life) continue;
+      d.vel.y -= 18 * dt; d.pos.addScaledVector(d.vel, dt);
+      const bottom = d.floorY + d.dim.y * 0.5;
+      if (d.pos.y < bottom) {
+        d.pos.y = bottom;
+        if (!d.bounced && d.vel.y < -1.5) { d.bounced = true; d.vel.y *= -0.32; d.vel.x *= 0.5; d.vel.z *= 0.5; d.spin *= 0.5; }
+        else { d.vel.y = 0; const f = Math.exp(-9 * dt); d.vel.x *= f; d.vel.z *= f; d.spin *= f; }
+      }
+      if (d.spin > 0.05) d.q.multiply(this._q.setFromAxisAngle(d.axis, d.spin * dt));
+      L[n++] = d;
+    }
+    L.length = n;
+    for (let i = 0; i < n; i++) {
+      const d = L[i], shrink = clamp((d.life - d.age) / 0.45, 0, 1);
+      this._s.copy(d.dim).multiplyScalar(shrink);
+      this._m.compose(d.pos, d.q, this._s); this.mesh.setMatrixAt(i, this._m);
+      this.mesh.setColorAt(i, this._c.setRGB(d.col[0], d.col[1], d.col[2]));
+    }
+    this.mesh.count = n;
+    if (n) { this.mesh.instanceMatrix.needsUpdate = true; this.mesh.instanceColor.needsUpdate = true; }
+  }
+  clear() { this.list.length = 0; this.mesh.count = 0; }
+}
+
 export function createFx(ctx) {
   const scene = ctx.scene, camera = ctx.camera;
   const atlas = atlasTex();
@@ -253,6 +325,19 @@ export function createFx(ctx) {
   const senseMat = new THREE.SpriteMaterial({ map: senseTex(), color: new THREE.Color(4, 3, 1.6), transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });
   const sense = new THREE.Sprite(senseMat); sense.renderOrder = 40; sense.scale.setScalar(1); sense.visible = false; sense.name = 'cmb-spidersense'; scene.add(sense);
   const S = { level: 0, pop: 0, red: 0, t: 0 };
+  // (user r18) heavier impacts: debris chips + a small round-robin pool of crack decals (own material each: per-decal fade)
+  const debris = new Debris(scene);
+  const crackMap = crackTex();
+  const cracks = [];
+  for (let i = 0; i < 12; i++) {
+    const m = new THREE.MeshStandardMaterial({ map: crackMap, transparent: true, depthWrite: false, roughness: 1, metalness: 0,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+    m.name = 'cmb-crack';
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), m); mesh.visible = false; mesh.receiveShadow = true; mesh.name = 'cmb-crack'; mesh.renderOrder = 2;
+    scene.add(mesh); cracks.push({ mesh, t: 0, life: 0, size: 1, on: false });
+  }
+  let crackNext = 0;
+  const floorUnder = (p) => { const w = ctx.world; try { const g = w?.groundHeight?.(p.x, p.z, p.y); return Number.isFinite(g) ? g : p.y - 1.2; } catch (e) { return p.y - 1.2; } };
 
   const fx = {
     add, alpha, webMat, cocoonMat,
@@ -288,6 +373,49 @@ export function createFx(ctx) {
         const a = i / n * Math.PI * 2 + rnd(0, 0.5);
         alpha.emit({ pos: _v.copy(pos).add(_v2.set(Math.cos(a) * 0.3, 0.15, Math.sin(a) * 0.3)), vel: _v3.set(Math.cos(a), rnd(0.1, 0.5), Math.sin(a)).multiplyScalar(rnd(1.8, 4) * amount), life: rnd(0.6, 1.1), size: 0.5, size1: 1.4 + amount * 0.6, color: [0.62, 0.6, 0.57], alpha: 0.42, tile: 3, drag: 3.2, fadeIn: 0.05 });
       }
+    },
+    // (user r18) heavy-impact burst for combo enders / launchers / finishers: a bright core flash, two expanding
+    // shock rings (fast inner, wide outer) and radial speed lines thrown out across the blow
+    blast(pos, dir, power = 1) {
+      const p = power;
+      add.emit({ pos, life: 0.09, size: 0.45 * p, size1: 1.0 * p, color: [8, 6.4, 4.8], alpha: 0.85, tile: 0 });
+      add.emit({ pos, life: 0.12, size: 0.3, size1: 1.2 * p, color: [3, 2.8, 2.5], alpha: 0.45, tile: 2 });
+      add.emit({ pos, life: 0.18, size: 0.5, size1: 1.9 * p, color: [2, 1.85, 1.6], alpha: 0.26, tile: 2 }); // thin + quick: an air ripple, not a donut
+      const side = _v3.set(-dir.z, 0, dir.x);
+      for (let i = 0; i < 18; i++) {
+        const a = i / 18 * Math.PI * 2 + rnd(0, 0.3);
+        const v = _v2.copy(side).multiplyScalar(Math.cos(a)); v.y += Math.sin(a); v.multiplyScalar(rnd(9, 16) * p).addScaledVector(dir, rnd(2, 5));
+        add.emit({ pos, vel: v, life: rnd(0.09, 0.16), size: 0.03, size1: 0.012, stretch: 10, color: [4, 3.6, 3.2], alpha: 0.8, drag: 7 });
+      }
+    },
+    // (user r18) body smashed into a wall: cracked crater on the facade, debris chips, a dust burst rolling off the wall and
+    // stone flecks. pos: impact point on the wall (chest height), normal: wall normal (out of the wall), power 0..1
+    wallSmash(pos, normal, power = 1) {
+      const n = _v.copy(normal).setY(0).normalize(), t = _v2.set(-n.z, 0, n.x);
+      const near = cracks.find(k => k.on && k.mesh.position.distanceToSquared(pos) < 0.8);
+      if (near) { near.t = 0.08; near.size = Math.max(near.size, 1.7 + 1.2 * power); } // same spot: refresh, don't stack
+      else {
+        const ck = cracks[crackNext]; crackNext = (crackNext + 1) % cracks.length; // oldest decal reused
+        ck.mesh.position.copy(pos).addScaledVector(n, 0.03);
+        ck.mesh.quaternion.setFromUnitVectors(_v3.set(0, 0, 1), n); ck.mesh.rotateZ(Math.random() * Math.PI * 2);
+        ck.size = 1.7 + 1.2 * power; ck.t = 0; ck.life = 7; ck.on = true; ck.mesh.visible = true; ck.mesh.material.opacity = 1; ck.mesh.scale.setScalar(ck.size * 0.6);
+      }
+      const fl = floorUnder(pos), nChips = Math.round(7 + 8 * power);
+      for (let i = 0; i < nChips; i++) {
+        const o = _v3.copy(pos).addScaledVector(n, 0.15).addScaledVector(t, rnd(-0.45, 0.45)); o.y += rnd(-0.4, 0.4);
+        const v = new THREE.Vector3().copy(n).multiplyScalar(rnd(2.5, 6.5) * (0.7 + power * 0.5)).addScaledVector(t, rnd(-3, 3)); v.y += rnd(0.5, 4);
+        debris.emit(o, v, rnd(0.04, 0.12) * (0.8 + power * 0.4), fl);
+      }
+      for (let i = 0; i < 9; i++) { // dust rolling off the wall
+        const o = _v3.copy(pos).addScaledVector(n, 0.2).addScaledVector(t, rnd(-0.5, 0.5)); o.y += rnd(-0.5, 0.4);
+        const v = new THREE.Vector3().copy(n).multiplyScalar(rnd(0.8, 2.6)).addScaledVector(t, rnd(-1.6, 1.6)); v.y += rnd(-0.2, 0.6);
+        alpha.emit({ pos: o, vel: v, life: rnd(0.9, 1.6), size: 0.45, size1: 1.5 + power * 0.8, color: [0.62, 0.59, 0.55], alpha: 0.42, tile: 3, drag: 2.4, grav: -0.25, fadeIn: 0.04 });
+      }
+      for (let i = 0; i < 14; i++) { // fine stone flecks
+        const v = new THREE.Vector3().copy(n).multiplyScalar(rnd(4, 10)).addScaledVector(t, rnd(-4, 4)); v.y += rnd(-1, 4);
+        add.emit({ pos, vel: v, life: rnd(0.12, 0.25), size: rnd(0.02, 0.04), size1: 0.01, stretch: 6, color: [1.6, 1.5, 1.4], alpha: 0.8, drag: 5, grav: 9 });
+      }
+      add.emit({ pos: _v3.copy(pos).addScaledVector(n, 0.25), life: 0.08, size: 0.5, size1: 0.9, color: [3, 2.8, 2.6], alpha: 0.6, tile: 0 });
     },
     // web impact: white splat burst
     webHit(pos, dir) {
@@ -349,9 +477,17 @@ export function createFx(ctx) {
     clear() {
       for (const s of splats) { scene.remove(s.m); s.m.geometry.dispose(); } splats.length = 0;
       for (const r of ribbons) fx.freeRibbon(r.rb); ribbons.length = 0;
+      debris.clear(); for (const ck of cracks) { ck.on = false; ck.mesh.visible = false; } // (user r18)
     },
     update(dt, realDt) {
       add.update(dt); alpha.update(dt);
+      debris.update(dt); // (user r18)
+      for (const ck of cracks) { // (user r18) crack decals: snap in over 0.08 s, hold, fade over the last 1.5 s
+        if (!ck.on) continue; ck.t += dt;
+        ck.mesh.scale.setScalar(ck.size * (0.6 + 0.4 * clamp(ck.t / 0.08, 0, 1)));
+        ck.mesh.material.opacity = clamp((ck.life - ck.t) / 1.5, 0, 1);
+        if (ck.t >= ck.life) { ck.on = false; ck.mesh.visible = false; }
+      }
       const cp = camera.position;
       for (let i = ribbons.length - 1; i >= 0; i--) {
         const r = ribbons[i]; r.t += dt;

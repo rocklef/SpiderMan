@@ -333,7 +333,15 @@ export class Enemy {
         if (h && Math.hypot(this.vel.x, this.vel.z) > 3) {
           if (this.knockWeb && this.c.isFacade(h)) { this.stickWall(h.point, h.normal); break; }
           if (this.knockWeb) { this.pos.y += 0.02; } else {
-          c.fx.hit(_v.copy(this.chest(_v2)), _v3.set(h.normal.x, 0, h.normal.z), { heavy: 0.4, color: [2, 2, 2] }); c.shake(0.15);
+          // (user r18) heavier wall impacts: cracked crater + debris + dust off the wall, power from the impact speed;
+          // a short hit-pause, stronger shake + camera punch and a slam thud
+          const pw = clamp((Math.hypot(this.vel.x, this.vel.z) - 3) / 9, 0.35, 1), wn = _v3.set(h.normal.x, 0, h.normal.z).normalize();
+          const wp = _v.set(h.point.x, this.chest(_v2).y, h.point.z);
+          // full smash at most every 0.7 s per thug (pinned against the wall and hit again: a lighter knock, no pause)
+          const full = (c.rtime ?? 0) - (this.smashT ?? -9) > 0.7;
+          c.fx.hit(wp, wn, { heavy: full ? 0.5 : 0.3, color: [2, 2, 2] });
+          if (full) { this.smashT = c.rtime ?? 0; c.fx.wallSmash(wp, wn, pw); c.shake(0.18 + 0.22 * pw); c.impact?.(0.15 + 0.2 * pw); c.hitStop?.(0.05 + 0.03 * pw, 0.1); c.sfx('slam'); }
+          else { c.fx.dust(_v2.copy(wp).addScaledVector(wn, 0.3).setY(wp.y - 0.6), { amount: 0.35 }); c.shake(0.12); }
           this.vel.x *= -0.25; this.vel.z *= -0.25; this.hp -= 6;
           }
         }

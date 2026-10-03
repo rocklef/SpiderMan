@@ -8,6 +8,7 @@
 //                      player = {update(dt), object:Object3D, applyShot(name)->boolean}
 //  ui/hud.js           createHud({player, world}) -> {update(dt), setVisible(b)}
 //  shots.js            SHOTS[name] = {time?, apply(ctx)}  deterministic poses for screenshot/critique
+import { createSkyLights } from './world/skylights.js';
 import * as THREE from 'three';
 import { createPipeline } from './render/pipeline.js';
 import { createLighting } from './render/lighting.js';
@@ -65,6 +66,7 @@ const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 15
 
 const lighting = createLighting({ renderer, scene });
 const world = await buildCity({ scene, renderer });
+const skyLights = createSkyLights(scene, world); // (user r14c) aviation obstruction lights on the tall roofs
 const input = createInput(renderer.domElement);
 await boot.stage('player');
 const player = await createPlayer({ scene, world, camera, input, renderer });
@@ -116,7 +118,7 @@ if (shotName) {
   function frame(realDt) {
     ctx.realDt = realDt;
     const dt = ctx.realDt * (ctx.timeScale ?? 1);
-    player.update(dt); world.update(dt, camera); lighting.update(camera); hud.update(dt);
+    player.update(dt); world.update(dt, camera); lighting.update(camera); hud.update(dt); skyLights.update(ctx.realDt);
     for (const s of ctx.systems) s.update?.(dt);
     pipeline.render(dt);
     warmup?.step(); // (perf r3)

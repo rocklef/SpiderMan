@@ -1,0 +1,5 @@
+peter.glb — "Peter Parker" by Player 1 The SFM Animator (https://sketchfab.com/Player1TheSFMAnimator)
+Source: https://sketchfab.com/3d-models/peter-parker-b7fe01688f864e47bd6017921a579370
+License: CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+Changes: textures resized to <= 2048 px and re-encoded as WebP, the single-frame Mixamo pose removed
+(tools/peter/build_peter.py). In game it is driven by retargeted Spider-Man animation (src/game/systems/peter.js).

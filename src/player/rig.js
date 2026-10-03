@@ -10,10 +10,10 @@ import { Animator } from './anim/animator.js';
 import { legacyAnim } from './anim/legacy.js';
 import { applySuitFabric } from './suitfabric.js';
 
-const LOGICAL = ['hips', 'spine', 'chest', 'neck', 'head',
+export const LOGICAL = ['hips', 'spine', 'chest', 'neck', 'head',
   'upperArmL', 'lowerArmL', 'handL', 'upperArmR', 'lowerArmR', 'handR',
   'upperLegL', 'lowerLegL', 'footL', 'upperLegR', 'lowerLegR', 'footR'];
-const CHILD = { upperArmL: 'lowerArmL', lowerArmL: 'handL', upperArmR: 'lowerArmR', lowerArmR: 'handR',
+export const CHILD = { upperArmL: 'lowerArmL', lowerArmL: 'handL', upperArmR: 'lowerArmR', lowerArmR: 'handR',
   upperLegL: 'lowerLegL', lowerLegL: 'footL', upperLegR: 'lowerLegR', lowerLegR: 'footR' };
 
 // ---------------------------------------------------------------- bone name resolution
@@ -23,7 +23,7 @@ function side(n) {
   const m = n.match(/[._\-\s]([lLrR])$/) || n.match(/[a-z0-9]([LR])$/) || n.match(/^([lLrR])[._\-\s]/);
   return m ? m[1].toUpperCase() : '';
 }
-function resolveBones(root) {
+export function resolveBones(root) {
   const bones = {};
   const all = [];
   root.traverse(o => { if (o.isBone || o.userData.isRigBone) all.push(o); });
@@ -43,7 +43,7 @@ function resolveBones(root) {
     bones['lowerArm' + S] = find(/fore_?arm|lower_?arm|lowarm|elbow/, S, /twist/);
     bones['hand' + S] = find(/hand|wrist/, S, /index|thumb|middle|ring|pinky|finger|end/);
     bones['upperLeg' + S] = find(/thigh|upper_?leg|up_?leg|upleg/, S, /twist/);
-    bones['lowerLeg' + S] = find(/shin|calf|lower_?leg|knee|^leg|lowleg/, S, /twist|up/);
+    bones['lowerLeg' + S] = find(/shin|calf|lower_?leg|knee|^leg|lowleg/, S, /twist|up/) || find(/(left|right)_?leg/, S, /twist|up/); // (user r14e) Mixamo 'LeftLeg_056'
     bones['foot' + S] = find(/foot|ankle/, S, /toe|end|ball/);
   }
   return bones;

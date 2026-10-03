@@ -7,6 +7,7 @@
 // The same skeleton gives the cheaper mid / far LODs and the trunk collision capsule.
 import * as THREE from 'three';
 import { mulberry32 } from './layout.js';
+import { addWind } from './wind.js'; // (user r14c) shared wind
 
 export const BARK = { PLANE: 0, OAK: 1, DARK: 2 };
 const TILE = 0.85;   // metres per bark texture repeat (vertical, and ~ around the circumference)
@@ -237,10 +238,14 @@ export function barkMaterial() {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93, metalness: 0 });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.tBarkC = T.col; sh.uniforms.tBarkN = T.nrm;
+    addWind(sh);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
       attribute vec4 aBark; varying vec4 vBark; varying vec2 vBUv;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-      vBark = aBark; vBUv = uv;`);
+      vBark = aBark; vBUv = uv;
+      #ifdef USE_INSTANCING
+        transformed += windSway(position, instanceMatrix, 0.0, position); // (user r14c) the trunk bends with its crown
+      #endif`);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
       uniform highp sampler2DArray tBarkC; uniform highp sampler2DArray tBarkN; varying vec4 vBark; varying vec2 vBUv;`)
       .replace('#include <map_fragment>', `

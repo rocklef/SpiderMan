@@ -22,7 +22,7 @@ export function createSettingsPage(sys) {
       ${seg('quality', [['low', 'Low'], ['med', 'Medium'], ['high', 'High']], 'Quality Preset', `Shadows, AO, clouds, DoF samples. Applying reloads the game (current: ${curQ}).`)}
       ${range('renderScale', 0.6, 1.25, 0.05, 'Render Resolution', 'Internal resolution scale. Lower for more FPS.', FMT.renderScale)}
       ${seg('look', [['asm2', 'ASM2 Film'], ['standard', 'Standard']], 'Film Look', 'Colour grade: The Amazing Spider-Man 2 (golden highlights, teal shadows, bloom) or the neutral grade')}
-      ${seg('timeOfDay', [['asm2', 'ASM2 Golden'], ['day', 'Day'], ['morning', 'Morning'], ['sunrise', 'Sunrise'], ['sunset', 'Sunset'], ['dusk', 'Dusk'], ['night', 'Night'], ['overcast', 'Overcast']], 'Time of Day', 'Hand-tuned lighting preset')}
+      ${seg('timeOfDay', [['asm2', 'ASM2 Golden'], ['day', 'Day'], ['morning', 'Morning'], ['winter', 'Winter Morning'], ['sunrise', 'Sunrise'], ['sunset', 'Sunset'], ['dusk', 'Dusk'], ['night', 'Night'], ['overcast', 'Overcast']], 'Time of Day', 'Hand-tuned lighting preset')}
       ${seg('daySun', [['a', 'Midday'], ['b', 'Late Morning'], ['c', 'Afternoon']], 'Day Sun', 'Sun direction for the Day preset (shadow angle)')}
       ${seg('puddles', [['true', 'On'], ['false', 'Off']], 'Puddles', 'Water and wet patches on the ground in dry weather (rain always wets the streets)')}`; // (lighting2 r3) fixed presets (no cycle)
     else if (cat === 'camera') main.innerHTML = `<div class="sys-h3">Camera</div>

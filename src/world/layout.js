@@ -28,8 +28,8 @@ export function hash2(x, z) {
 // (zfix) ?nozfix: A/B switch that turns the z-fight fixes off (before / after renders, tools/zfight_jitter.mjs)
 export const ZFIX = !(typeof location !== 'undefined' && /[?&]nozfix\b/.test(location.search));
 export const G = {
-  AV_ROAD: 22, AV_WALK: 5,                   // avenue roadway width, sidewalk width
-  ST_SP: 80, ST_ROAD: 10, ST_WALK: 4,        // street spacing
+  AV_ROAD: 28, AV_WALK: 7,                   // avenue roadway width, sidewalk width (user r14d: 22 / 5 -> 28 / 7, room to swing)
+  ST_SP: 80, ST_ROAD: 16, ST_WALK: 6,        // street spacing (user r14d: streets 10 / 4 -> 16 / 6: a 28 m canyon, was 18 m)
   PROM: 16,                                  // min promenade width between the grid and the seawall
   X_MIN: -790, X_MAX: 870,                   // island bounding box (x) (incl. SHORE_PUSH)
   Z_MIN: -3480, Z_MAX: 3330,                 // island tips (z)
@@ -41,7 +41,7 @@ export const G = {
   CURB_H: 0.15,
 };
 G.AV_HALF = G.AV_ROAD / 2; G.ST_HALF = G.ST_ROAD / 2;
-G.AV_LANE = 3.6; // 3 lanes each direction + double yellow
+G.AV_LANE = 4.5; // 3 lanes each direction + double yellow (user r14d: 3.6 -> 4.5 with the wider avenues)
 G.AV_SP = 200;   // (legacy: nominal spacing; the real list is irregular)
 
 // avenues west -> east: 12th/West End, 10th/Amsterdam, 8th/CPW, 6th/Lenox, 5th, Park/Lex, 2nd/1st
